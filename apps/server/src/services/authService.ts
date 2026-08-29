@@ -12,7 +12,7 @@ async function assertPinAvailable(pin: string) {
   const employees = await prisma.employee.findMany({ where: { active: true } });
   for (const employee of employees) {
     if (await verifyPin(pin, employee.pinHash)) {
-      throw new HttpError(409, 'That PIN is already in use by another employee — pick a different one');
+      throw new HttpError(409, 'That PIN is already in use by another employee - pick a different one');
     }
   }
 }
