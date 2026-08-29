@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>POS</title>
+    <script>
+      (function () {
+        try {
+          var stored = JSON.parse(localStorage.getItem('pos:theme') || 'null');
+          var mode = (stored && stored.mode) || 'system';
+          var resolved = mode;
+          if (mode === 'system') {
+            resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.setAttribute('data-theme', resolved);
+          if (stored && stored.primaryColor) {
+            document.documentElement.style.setProperty('--color-primary', stored.primaryColor);
+          }
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
+    <style>
+      /* Minimal pre-mount palette so the very first paint isn't blank white/black. */
+      html[data-theme='light'] { background: #F8FAFC; color: #0F172A; }
+      html[data-theme='dark'] { background: #0F172A; color: #F1F5F9; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

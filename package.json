@@ -1,0 +1,25 @@
+{
+  "name": "pos-system",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/server & npm run dev --workspace=apps/web",
+    "dev:server": "npm run dev --workspace=apps/server",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=apps/server && npm run build --workspace=apps/web",
+    "test": "npm run test --workspaces --if-present",
+    "prisma:generate": "npm run prisma:generate --workspace=apps/server",
+    "prisma:migrate": "npm run prisma:migrate --workspace=apps/server",
+    "seed": "npm run seed --workspace=apps/server"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,59 @@
+@import 'tailwindcss';
+
+/*
+ * Section 3: the theme is CSS-variable driven, not hardcoded. useThemeSync.ts
+ * sets --color-primary, --on-primary, --color-bg, --color-surface, etc. on
+ * <html> at runtime from shop_settings. The tokens below register Tailwind
+ * utilities (bg-primary, text-ink, ...) that read from those same variables —
+ * several are aliased (var(--on-primary, ...)) because Tailwind's naming
+ * convention can't reuse the exact spec variable names directly. Defaults
+ * here are just first-paint fallbacks; runtime values always win.
+ */
+@theme {
+  --color-primary: #1e40af;
+  --color-primary-hover: #1e3a8a;
+  --color-on-primary: var(--on-primary, #ffffff);
+  --color-canvas: var(--color-bg, #f8fafc);
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-ink: var(--color-text-primary, #0f172a);
+  --color-muted: var(--color-text-secondary, #475569);
+  --color-success: #16a34a;
+  --color-danger: #dc2626;
+  --color-warning: #d97706;
+}
+
+body {
+  @apply bg-canvas text-ink;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/*
+ * Receipt / label sheet: invisible in the normal UI, the only thing shown
+ * when printing (Section 7). This show/hide-everything-else trick is a
+ * page-level concern that doesn't map onto component utility classes, so it
+ * stays as plain CSS; the content inside each is styled with Tailwind.
+ */
+.receipt,
+.label-sheet {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .receipt,
+  .receipt *,
+  .label-sheet,
+  .label-sheet * {
+    visibility: visible;
+  }
+  .receipt,
+  .label-sheet {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+}

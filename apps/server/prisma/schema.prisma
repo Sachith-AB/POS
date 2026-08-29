@@ -1,0 +1,303 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  EMPLOYEE
+  TECHNICIAN
+}
+
+enum SaleStatus {
+  PARKED
+  COMPLETED
+  VOID
+}
+
+enum SerializedItemStatus {
+  IN_STOCK
+  SOLD
+}
+
+enum StockMovementType {
+  RECEIVE
+  SALE
+  ADJUSTMENT
+  RETURN
+}
+
+enum InstallmentStatus {
+  ACTIVE
+  COMPLETE
+  OVERDUE
+}
+
+enum RepairStatus {
+  RECEIVED
+  DIAGNOSING
+  AWAITING_PARTS
+  REPAIRED
+  DELIVERED
+  CANCELLED
+}
+
+enum OutboxType {
+  BACKUP
+  SMS
+  DASHBOARD_SYNC
+}
+
+enum OutboxStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  EZ_CASH_ONLINE
+}
+
+enum ThemeModeSetting {
+  light
+  dark
+  system
+}
+
+enum BarcodeScannerMode {
+  USB_HID
+  CAMERA
+}
+
+/// Singleton row: one shop's branding + hardware config.
+model ShopSettings {
+  id                   String            @id @default(cuid())
+  companyName          String            @default("My Shop")
+  logoUrl              String?
+  primaryColor         String            @default("#1E40AF")
+  themeMode            ThemeModeSetting  @default(system)
+  discountLimitPercent Decimal           @default(20) @db.Decimal(5, 2)
+  lowStockDefaultDays  Int               @default(90)
+  receiptPrinterType   String?
+  receiptPrinterName   String?
+  cashDrawerEnabled    Boolean           @default(false)
+  barcodeScannerMode   BarcodeScannerMode @default(USB_HID)
+  receiptWidth         String            @default("80mm")
+  updatedAt            DateTime          @updatedAt
+
+  @@map("shop_settings")
+}
+
+model Employee {
+  id        String   @id @default(cuid())
+  name      String
+  pinHash   String
+  role      Role
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  sales           Sale[]
+  stockMovements  StockMovement[]
+  auditLogs       AuditLog[]
+
+  @@map("employees")
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  name      String?
+  notes     String?
+  createdAt DateTime @default(now())
+
+  sales         Sale[]
+  repairTickets RepairTicket[]
+
+  @@index([phone])
+  @@map("customers")
+}
+
+model Product {
+  id                String   @id @default(cuid())
+  sku               String   @unique
+  barcode           String?  @unique
+  name              String
+  costPrice         Decimal  @db.Decimal(12, 2)
+  sellPrice         Decimal  @db.Decimal(12, 2)
+  quantity          Int      @default(0)
+  lowStockThreshold Int      @default(3)
+  category          String
+  isSerialized      Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  serializedItems SerializedItem[]
+  stockMovements  StockMovement[]
+  saleItems       SaleItem[]
+
+  @@index([barcode])
+  @@index([category])
+  @@map("products")
+}
+
+model SerializedItem {
+  id             String                @id @default(cuid())
+  productId      String
+  imei           String                @unique
+  status         SerializedItemStatus  @default(IN_STOCK)
+  soldInSaleItemId String?             @unique
+  createdAt      DateTime              @default(now())
+
+  product      Product    @relation(fields: [productId], references: [id])
+  soldInSaleItem SaleItem? @relation(fields: [soldInSaleItemId], references: [id])
+
+  @@index([productId])
+  @@map("serialized_items")
+}
+
+model StockMovement {
+  id               String            @id @default(cuid())
+  productId        String
+  type             StockMovementType
+  quantityDelta    Int
+  costPriceAtTime  Decimal?          @db.Decimal(12, 2)
+  supplierName     String?
+  invoiceRef       String?
+  employeeId       String
+  createdAt        DateTime          @default(now())
+
+  product  Product  @relation(fields: [productId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([productId])
+  @@index([createdAt])
+  @@map("stock_movements")
+}
+
+model Sale {
+  id         String     @id @default(cuid())
+  customerId String?
+  employeeId String
+  status     SaleStatus @default(PARKED)
+  subtotal   Decimal    @default(0) @db.Decimal(12, 2)
+  discount   Decimal    @default(0) @db.Decimal(12, 2)
+  total      Decimal    @default(0) @db.Decimal(12, 2)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  customer         Customer?         @relation(fields: [customerId], references: [id])
+  employee         Employee          @relation(fields: [employeeId], references: [id])
+  items            SaleItem[]
+  payments         Payment[]
+  installmentPlan  InstallmentPlan?
+
+  @@index([createdAt])
+  @@index([status])
+  @@map("sales")
+}
+
+model SaleItem {
+  id               String   @id @default(cuid())
+  saleId           String
+  productId        String
+  serializedItemId String?
+  quantity         Int
+  unitPrice        Decimal  @db.Decimal(12, 2)
+  lineTotal        Decimal  @db.Decimal(12, 2)
+
+  sale                  Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product               Product          @relation(fields: [productId], references: [id])
+  /// Back-reference from SerializedItem.soldInSaleItemId — set once the sale completes.
+  soldSerializedItem    SerializedItem?
+
+  @@index([saleId])
+  @@map("sale_items")
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  saleId    String
+  amount    Decimal       @db.Decimal(12, 2)
+  method    PaymentMethod
+  createdAt DateTime      @default(now())
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@map("payments")
+}
+
+model InstallmentPlan {
+  id               String             @id @default(cuid())
+  saleId           String             @unique
+  scheduleJson     Json
+  remainingBalance Decimal            @db.Decimal(12, 2)
+  status           InstallmentStatus  @default(ACTIVE)
+  guarantorName    String?
+  guarantorNic     String?
+  guarantorPhone   String?
+  guarantorAddress String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  sale Sale @relation(fields: [saleId], references: [id])
+
+  @@index([status])
+  @@map("installment_plans")
+}
+
+model RepairTicket {
+  id           String       @id @default(cuid())
+  ticketNumber String       @unique
+  customerId   String
+  deviceInfo   String
+  issue        String
+  status       RepairStatus @default(RECEIVED)
+  estimate     Decimal?     @db.Decimal(12, 2)
+  partsJson    Json?
+  photos       String[]     @default([])
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("repair_tickets")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  employeeId String
+  action     String
+  entity     String
+  entityId   String
+  beforeJson Json?
+  afterJson  Json?
+  createdAt  DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Outbox {
+  id          String       @id @default(cuid())
+  type        OutboxType
+  payloadJson Json
+  status      OutboxStatus @default(PENDING)
+  attempts    Int          @default(0)
+  createdAt   DateTime     @default(now())
+
+  @@index([status])
+  @@map("outbox")
+}
