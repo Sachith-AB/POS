@@ -145,3 +145,21 @@ export const repairTicketUpdateSchema = z.object({
   partsJson: z.unknown().optional(),
 });
 export type RepairTicketUpdateInput = z.infer<typeof repairTicketUpdateSchema>;
+
+export const installmentPlanCreateSchema = z.object({
+  saleId: z.string().min(1),
+  downPayment: z.number().nonnegative(),
+  numberOfInstallments: z.number().int().positive(),
+  intervalDays: z.number().int().positive(),
+  guarantorName: z.string().max(120).nullable().optional(),
+  guarantorNic: z.string().max(30).nullable().optional(),
+  guarantorPhone: z.string().max(20).nullable().optional(),
+  guarantorAddress: z.string().max(500).nullable().optional(),
+});
+export type InstallmentPlanCreateInput = z.infer<typeof installmentPlanCreateSchema>;
+
+export const installmentPaymentSchema = z.object({
+  amount: z.number().positive(),
+});
+export type InstallmentPaymentInput = z.infer<typeof installmentPaymentSchema>;
+

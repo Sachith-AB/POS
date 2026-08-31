@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { FiTrash2 } from 'react-icons/fi';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
 import { api, ApiError } from '../lib/api';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { UndoToast } from '../components/UndoToast';
 import { Receipt } from '../components/Receipt';
 import { Input } from '../components/Input';
+import { Button } from '../components/Button';
 import type { Product } from '../features/products/productsSlice';
 import {
   activeBillSwitched,
@@ -17,11 +20,13 @@ import {
   lastRemovedCleared,
   priceCheckToggled,
   saleCompleteRequested,
+  lastCompletedCleared,
 } from '../features/pos/posSlice';
 import { quickButtonsRequested } from '../features/products/productsSlice';
 
 export function PosPage() {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const { bills, activeIndex, priceCheckMode, saving, completing, lastRemoved, error } = useAppSelector(
     (s) => s.pos
   );
@@ -34,6 +39,7 @@ export function PosPage() {
   const [notFound, setNotFound] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<'CASH' | 'CARD' | 'BANK_TRANSFER'>('CASH');
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);
@@ -42,6 +48,14 @@ export function PosPage() {
     searchRef.current?.focus();
     dispatch(quickButtonsRequested());
   }, [dispatch]);
+
+  // Clean up completed sale snapshot on unmount
+  useEffect(() => {
+    return () => {
+      dispatch(lastCompletedCleared());
+    };
+  }, [dispatch]);
+
 
   const subtotal = bill.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
   const total = Math.max(0, subtotal - bill.discount);
@@ -92,8 +106,10 @@ export function PosPage() {
       printedRef.current = lastCompleted.completedAt;
       setAmount('');
       window.print();
+      setShowSuccessModal(true);
     }
   }, [lastCompleted]);
+
 
   useKeyboardShortcuts({
     F1: () => searchRef.current?.focus(),
@@ -112,29 +128,23 @@ export function PosPage() {
         <div className="flex min-h-0 flex-col gap-3">
           <div className="flex gap-1.5">
             {bills.map((b, i) => (
-              <button
+              <Button
                 key={i}
                 onClick={() => dispatch(activeBillSwitched(i))}
-                className={`rounded-lg border px-2.5 py-1.5 text-sm ${
-                  i === activeIndex
-                    ? 'border-primary bg-primary text-on-primary'
-                    : 'border-border bg-surface text-ink'
-                }`}
+                variant={i === activeIndex ? 'primary' : 'secondary'}
+                className="py-1 px-2.5"
               >
                 Bill {i + 1}
                 {b.items.length ? ` (${b.items.length})` : ''}
-              </button>
+              </Button>
             ))}
-            <button
+            <Button
               onClick={() => dispatch(priceCheckToggled())}
-              className={`rounded-lg border px-2.5 py-1.5 text-sm ${
-                priceCheckMode
-                  ? 'border-primary bg-primary text-on-primary'
-                  : 'border-border bg-surface text-ink'
-              }`}
+              variant={priceCheckMode ? 'primary' : 'secondary'}
+              className="py-1 px-2.5"
             >
               {priceCheckMode ? 'Price Check: ON' : 'Price Check'}
-            </button>
+            </Button>
           </div>
 
           <Input
@@ -170,12 +180,14 @@ export function PosPage() {
                   />
                   <span>{item.unitPrice.toFixed(2)}</span>
                   <span>{(item.quantity * item.unitPrice).toFixed(2)}</span>
-                  <button
+                  <Button
                     onClick={() => dispatch(lineRemoved({ productId: item.productId }))}
-                    className="rounded-lg border border-border bg-surface text-ink"
+                    variant="ghost"
+                    className="p-1 h-8 w-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200"
+                    title="Remove item"
                   >
-                    ×
-                  </button>
+                    <FiTrash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               ))
             )}
@@ -184,13 +196,14 @@ export function PosPage() {
           {quickButtons.length > 0 ? (
             <div className="grid grid-cols-5 gap-1.5">
               {quickButtons.map((p) => (
-                <button
+                <Button
                   key={p.id}
                   onClick={() => addProduct(p)}
-                  className="rounded-lg border border-border bg-surface px-1 py-2.5 text-center text-xs text-ink"
+                  variant="secondary"
+                  className="px-1 py-2 text-center text-xs"
                 >
                   {p.name}
-                </button>
+                </Button>
               ))}
             </div>
           ) : null}
@@ -248,12 +261,13 @@ export function PosPage() {
             <option value="BANK_TRANSFER">Bank Transfer</option>
           </select>
 
-          <button
+          <Button
             onClick={handleComplete}
-            className="mt-3 w-full rounded-lg border border-primary bg-primary py-2 font-semibold text-on-primary hover:bg-primary-hover"
+            loading={completing}
+            className="mt-3 w-full"
           >
             Complete &amp; Print (F12)
-          </button>
+          </Button>
 
           <p className="min-h-[1.25em] text-muted">
             {saving ? 'Saving…' : ''}
@@ -271,6 +285,53 @@ export function PosPage() {
       ) : null}
 
       <Receipt />
+
+      {showSuccessModal && lastCompleted ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-surface p-6 text-center shadow-lg">
+            <span className="text-4xl text-success block mb-2">🎉</span>
+            <h2 className="text-base font-bold text-ink">Sale Completed!</h2>
+            <p className="text-xs text-muted mt-1 font-medium">Receipt has been sent to the printer.</p>
+            <div className="my-4 rounded-lg bg-canvas p-3 text-xs border border-border">
+              <p className="text-muted font-medium">Total Amount</p>
+              <p className="text-lg font-mono font-bold text-ink">Rs {lastCompleted.total.toFixed(2)}</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  navigate(`/installments?createSaleId=${lastCompleted.id}`);
+                }}
+                className="w-full py-2 text-xs font-bold"
+              >
+                Convert to Installment Plan
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  window.print();
+                }}
+                variant="secondary"
+                className="w-full py-2 text-xs font-bold"
+              >
+                Print Receipt Again
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  dispatch(lastCompletedCleared());
+                }}
+                variant="secondary"
+                className="w-full py-2 text-xs font-bold text-muted hover:text-ink"
+              >
+                Dismiss / New Sale
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

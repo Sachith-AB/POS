@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import path from 'node:path';
 import routes from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { initJobRunner } from './services/jobRunner.js';
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
@@ -22,4 +23,6 @@ app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`POS server listening on http://localhost:${PORT}`);
+  initJobRunner();
 });
+

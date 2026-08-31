@@ -4,6 +4,7 @@ import { useAppDispatch, useAppSelector } from '../app/hooks';
 import { settingsUpdateRequested, type ShopSettings } from '../features/settings/settingsSlice';
 import { employeeCreateRequested, employeesRequested, type Employee } from '../features/auth/authSlice';
 import { Input } from '../components/Input';
+import { Button } from '../components/Button';
 import { PinInput } from '../components/PinInput';
 import { Overlay } from '../components/Overlay';
 
@@ -59,16 +60,16 @@ function AddEmployeeModal({ onClose }: { onClose: () => void }) {
       {addEmployeeError ? <p className="mt-2 text-danger">{addEmployeeError}</p> : null}
 
       <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border border-border bg-surface px-4 py-2 text-ink">
+        <Button onClick={onClose} variant="secondary">
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={submit}
-          disabled={!newName.trim() || newPin.length !== PIN_LENGTH || addingEmployee}
-          className="rounded-lg border border-primary bg-primary px-4 py-2 font-semibold text-on-primary disabled:opacity-50"
+          disabled={!newName.trim() || newPin.length !== PIN_LENGTH}
+          loading={addingEmployee}
         >
-          {addingEmployee ? 'Adding…' : 'Add Employee'}
-        </button>
+          Add Employee
+        </Button>
       </div>
     </Overlay>
   );
@@ -182,13 +183,13 @@ export function SettingsPage() {
             className="w-full"
           />
 
-          <button
+          <Button
             onClick={() => dispatch(settingsUpdateRequested(branding))}
-            disabled={saving}
-            className={saveBtnClass}
+            loading={saving}
+            className="mt-4"
           >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </Button>
         </section>
 
         <section className="w-1/2 rounded-xl border border-border bg-surface p-4">
@@ -224,25 +225,24 @@ export function SettingsPage() {
             Cash drawer connected (via printer kick-out)
           </label>
 
-          <button
+          <Button
             onClick={() => dispatch(settingsUpdateRequested(hardware))}
-            disabled={saving}
-            className={saveBtnClass}
+            loading={saving}
+            className="mt-4"
           >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </Button>
         </section>
       </div>
 
       <section className="mt-4 rounded-xl border border-border bg-surface p-4">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold">Employees</h3>
-          <button
+          <Button
             onClick={() => setShowAddEmployee(true)}
-            className="rounded-lg border border-primary bg-primary px-4 py-2 font-semibold text-on-primary"
           >
             Add Employee
-          </button>
+          </Button>
         </div>
         <p className="text-muted">
           Each employee logs in with just their {PIN_LENGTH}-digit PIN - no employee list to pick from, so PINs must be

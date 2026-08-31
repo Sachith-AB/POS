@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
 import { api } from '../lib/api';
 import { Input } from '../components/Input';
+import { Button } from '../components/Button';
 import type { Product } from '../features/products/productsSlice';
 import {
   barcodeEntered,
@@ -13,9 +14,7 @@ import {
   supplierNameChanged,
 } from '../features/stock/stockSlice';
 
-const primaryBtnClass =
-  'rounded-lg border border-primary bg-primary px-3.5 py-2 font-semibold text-on-primary disabled:opacity-50';
-const btnClass = 'rounded-lg border border-border bg-surface px-3.5 py-2 text-ink';
+
 
 function ReceiveStockPanel() {
   const dispatch = useAppDispatch();
@@ -27,17 +26,29 @@ function ReceiveStockPanel() {
   const [cost, setCost] = useState('');
   const [imeis, setImeis] = useState<string[]>([]);
   const [imeiInput, setImeiInput] = useState('');
+  
+  // Quick/Manual create states
   const [quickName, setQuickName] = useState('');
   const [quickCost, setQuickCost] = useState('');
   const [quickSell, setQuickSell] = useState('');
   const [quickQty, setQuickQty] = useState('1');
   const [quickCategory, setQuickCategory] = useState('');
+  
+  // Custom manual receive states
+  const [receiveMode, setReceiveMode] = useState<'scan' | 'search' | 'create'>('scan');
+  const [manualBarcode, setManualBarcode] = useState('');
+  const [isSerializedProduct, setIsSerializedProduct] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<Product[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   const scanRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    scanRef.current?.focus();
-  }, []);
+    if (receiveMode === 'scan') {
+      scanRef.current?.focus();
+    }
+  }, [receiveMode]);
 
   useEffect(() => {
     if (matchedProduct) {
@@ -46,6 +57,26 @@ function ReceiveStockPanel() {
       setImeis([]);
     }
   }, [matchedProduct]);
+
+  // Search existing products manually
+  useEffect(() => {
+    const term = productSearch.trim();
+    if (receiveMode === 'search' && term.length >= 2) {
+      setSearchLoading(true);
+      api
+        .get<Product[]>(`/products?search=${encodeURIComponent(term)}`)
+        .then((res) => {
+          setSearchResults(res || []);
+          setSearchLoading(false);
+        })
+        .catch((err) => {
+          console.error(err);
+          setSearchLoading(false);
+        });
+    } else {
+      setSearchResults([]);
+    }
+  }, [receiveMode, productSearch]);
 
   function submitScan() {
     if (!code.trim()) return;
@@ -64,7 +95,8 @@ function ReceiveStockPanel() {
       })
     );
     setCode('');
-    scanRef.current?.focus();
+    setProductSearch('');
+    setReceiveMode('scan');
   }
 
   function addImei() {
@@ -86,9 +118,11 @@ function ReceiveStockPanel() {
     );
     setImeis([]);
     setCode('');
-    scanRef.current?.focus();
+    setProductSearch('');
+    setReceiveMode('scan');
   }
 
+  // Quick create from scan barcode not found
   function submitQuickCreate() {
     dispatch(
       quickCreateRequested({
@@ -106,7 +140,51 @@ function ReceiveStockPanel() {
     setQuickQty('1');
     setQuickCategory('');
     setCode('');
-    scanRef.current?.focus();
+    setReceiveMode('scan');
+  }
+
+  // Fully manual create (from form)
+  async function submitManualCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!quickName.trim()) return;
+
+    try {
+      const barcodeValue = manualBarcode.trim() || `MAN-${Date.now()}`;
+      const product = await api.post<Product>('/products', {
+        sku: `SKU-${barcodeValue}`,
+        barcode: barcodeValue,
+        name: quickName.trim(),
+        costPrice: Number(quickCost) || 0,
+        sellPrice: Number(quickSell) || 0,
+        quantity: Number(quickQty) || 0,
+        category: quickCategory.trim() || 'Uncategorized',
+        isSerialized: isSerializedProduct,
+        lowStockThreshold: 3,
+      });
+
+      // Add directly to receiving batch
+      dispatch(
+        lineAdded({
+          productId: product.id,
+          name: product.name,
+          quantityDelta: product.quantity,
+          costPriceAtTime: Number(product.costPrice),
+          imeis: [],
+        })
+      );
+
+      // Reset
+      setQuickName('');
+      setQuickCost('');
+      setQuickSell('');
+      setQuickQty('1');
+      setQuickCategory('');
+      setManualBarcode('');
+      setIsSerializedProduct(false);
+      setReceiveMode('scan');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create product');
+    }
   }
 
   const totalUnits = pendingLines.reduce((s, l) => s + l.quantityDelta, 0);
@@ -114,18 +192,160 @@ function ReceiveStockPanel() {
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="rounded-xl border border-border bg-surface p-4">
-        <h3 className="font-semibold">Scan to Receive</h3>
-        <Input
-          ref={scanRef}
-          placeholder="Scan barcode / IMEI"
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') submitScan();
-          }}
-          autoComplete="off"
-          className="mt-2 w-full"
-        />
+        {/* Tab Headers */}
+        <div className="flex border-b border-border mb-3.5 gap-2">
+          <button
+            onClick={() => {
+              setReceiveMode('scan');
+              dispatch(barcodeEntered(''));
+            }}
+            className={`pb-2 text-xs font-bold border-b-2 px-1 ${
+              receiveMode === 'scan' ? 'border-primary text-primary' : 'border-transparent text-muted hover:text-ink'
+            }`}
+          >
+            Scan Barcode
+          </button>
+          <button
+            onClick={() => {
+              setReceiveMode('search');
+              dispatch(barcodeEntered(''));
+            }}
+            className={`pb-2 text-xs font-bold border-b-2 px-1 ${
+              receiveMode === 'search' ? 'border-primary text-primary' : 'border-transparent text-muted hover:text-ink'
+            }`}
+          >
+            Search Existing Product
+          </button>
+          <button
+            onClick={() => {
+              setReceiveMode('create');
+              dispatch(barcodeEntered(''));
+            }}
+            className={`pb-2 text-xs font-bold border-b-2 px-1 ${
+              receiveMode === 'create' ? 'border-primary text-primary' : 'border-transparent text-muted hover:text-ink'
+            }`}
+          >
+            Create Product Manually
+          </button>
+        </div>
+
+        {receiveMode === 'scan' && (
+          <>
+            <h3 className="font-semibold text-xs text-muted uppercase block">Scan to Receive</h3>
+            <Input
+              ref={scanRef}
+              placeholder="Scan barcode / IMEI"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitScan();
+              }}
+              autoComplete="off"
+              className="mt-2 w-full text-xs"
+            />
+          </>
+        )}
+
+        {receiveMode === 'search' && (
+          <>
+            <h3 className="font-semibold text-xs text-muted uppercase block">Search Product</h3>
+            <Input
+              placeholder="Type to search name, SKU, or category..."
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+              className="mt-2 w-full text-xs"
+            />
+            <ul className="mt-2 divide-y divide-border border border-border rounded-lg max-h-60 overflow-y-auto bg-canvas">
+              {searchLoading && <li className="p-2 text-xs text-muted">Searching...</li>}
+              {!searchLoading && searchResults.length === 0 && (
+                <li className="p-2 text-xs text-muted">Type at least 2 characters to search.</li>
+              )}
+              {searchResults.map((p) => (
+                <li key={p.id} className="p-2 text-xs flex justify-between items-center hover:bg-surface-hover">
+                  <div>
+                    <span className="font-semibold block">{p.name}</span>
+                    <span className="text-[10px] text-muted">SKU: {p.sku} · Qty: {p.quantity}</span>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      dispatch(productMatched(p));
+                      setReceiveMode('scan');
+                    }}
+                    className="px-2.5 py-1 text-[10px]"
+                  >
+                    Select
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {receiveMode === 'create' && (
+          <>
+            <h3 className="font-semibold text-xs text-muted uppercase block">Create Product Manually</h3>
+            <form onSubmit={submitManualCreate} className="mt-2 space-y-3">
+              <Input
+                placeholder="Name *"
+                required
+                value={quickName}
+                onChange={(e) => setQuickName(e.target.value)}
+                className="w-full text-xs"
+              />
+              <Input
+                placeholder="Barcode (Optional)"
+                value={manualBarcode}
+                onChange={(e) => setManualBarcode(e.target.value)}
+                className="w-full text-xs"
+              />
+              <Input
+                placeholder="Category"
+                value={quickCategory}
+                onChange={(e) => setQuickCategory(e.target.value)}
+                className="w-full text-xs"
+              />
+              <div className="grid grid-cols-3 gap-2">
+                <Input
+                  placeholder="Cost Price"
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={quickCost}
+                  onChange={(e) => setQuickCost(e.target.value)}
+                  className="w-full text-xs font-mono"
+                />
+                <Input
+                  placeholder="Sell Price"
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={quickSell}
+                  onChange={(e) => setQuickSell(e.target.value)}
+                  className="w-full text-xs font-mono"
+                />
+                <Input
+                  placeholder="Qty Received"
+                  type="number"
+                  min={0}
+                  value={quickQty}
+                  onChange={(e) => setQuickQty(e.target.value)}
+                  className="w-full text-xs font-mono"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-xs text-ink">
+                <input
+                  type="checkbox"
+                  checked={isSerializedProduct}
+                  onChange={(e) => setIsSerializedProduct(e.target.checked)}
+                />
+                Serialized Product (Phones, tablets, watches)
+              </label>
+              <Button type="submit" disabled={!quickName} className="w-1/4 mt-2 text-xs">
+                Create &amp; Add to Batch
+              </Button>
+            </form>
+          </>
+        )}
 
         {matchedProduct && !matchedProduct.isSerialized ? (
           <div className="mt-3">
@@ -146,9 +366,9 @@ function ReceiveStockPanel() {
             />
             <label className="mt-2 block text-muted">Cost price (this delivery)</label>
             <Input type="number" value={cost} onChange={(e) => setCost(e.target.value)} className="w-full" />
-            <button onClick={confirmNonSerializedLine} className={`${primaryBtnClass} mt-2`}>
+            <Button onClick={confirmNonSerializedLine} className="mt-2 w-full">
               Add to batch (Enter)
-            </button>
+            </Button>
           </div>
         ) : null}
 
@@ -172,9 +392,9 @@ function ReceiveStockPanel() {
                 <li key={i}>{i}</li>
               ))}
             </ul>
-            <button onClick={finishSerializedProduct} disabled={imeis.length === 0} className={primaryBtnClass}>
+            <Button onClick={finishSerializedProduct} disabled={imeis.length === 0} className="w-full">
               Done ({imeis.length} units)
-            </button>
+            </Button>
           </div>
         ) : null}
 
@@ -209,12 +429,13 @@ function ReceiveStockPanel() {
               onChange={(e) => setQuickQty(e.target.value)}
               className="w-full"
             />
-            <button onClick={submitQuickCreate} disabled={!quickName} className={primaryBtnClass}>
+            <Button onClick={submitQuickCreate} disabled={!quickName} className="w-full">
               Create &amp; add to batch
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>
+
 
       <div className="rounded-xl border border-border bg-surface p-4">
         <h3 className="font-semibold">
@@ -238,19 +459,20 @@ function ReceiveStockPanel() {
               <span>
                 {l.name}: +{l.quantityDelta} {l.imeis.length ? `(IMEIs: ${l.imeis.join(', ')})` : ''}
               </span>
-              <button onClick={() => dispatch(lineRemoved(l.productId))} className={btnClass}>
+              <Button onClick={() => dispatch(lineRemoved(l.productId))} variant="secondary" className="py-1 px-2.5 text-[10px]">
                 remove
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
-        <button
+        <Button
           onClick={() => dispatch(batchSubmitRequested())}
-          disabled={pendingLines.length === 0 || submitting}
-          className={primaryBtnClass}
+          disabled={pendingLines.length === 0}
+          loading={submitting}
+          className="w-1/4"
         >
-          {submitting ? 'Saving…' : 'Finalize Batch'}
-        </button>
+          Finalize Batch
+        </Button>
         {lastBatchCount !== null ? (
           <p className="mt-2 text-muted">Last batch received: {lastBatchCount} line(s).</p>
         ) : null}
@@ -303,9 +525,9 @@ function LabelPrinterPanel() {
             <span>
               {p.name} ({p.sku})
             </span>
-            <button onClick={() => addToQueue(p)} className={btnClass}>
+            <Button onClick={() => addToQueue(p)} variant="secondary" className="py-1 px-2.5 text-[10px]">
               add
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
@@ -327,9 +549,9 @@ function LabelPrinterPanel() {
           </li>
         ))}
       </ul>
-      <button onClick={printLabels} disabled={queue.length === 0} className={primaryBtnClass}>
+      <Button onClick={printLabels} disabled={queue.length === 0} className="w-1/8">
         Generate &amp; Print
-      </button>
+      </Button>
 
       <div className="label-sheet flex flex-wrap gap-[4mm]">
         {labels.flatMap((label) =>

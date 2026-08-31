@@ -10,6 +10,10 @@ import { PosPage } from './pages/PosPage';
 
 const StockPage = lazy(() => import('./pages/StockPage').then((m) => ({ default: m.StockPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const RepairsPage = lazy(() => import('./pages/RepairsPage').then((m) => ({ default: m.RepairsPage })));
+const InstallmentsPage = lazy(() => import('./pages/InstallmentsPage').then((m) => ({ default: m.InstallmentsPage })));
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { employee, status } = useAppSelector((s) => s.auth);
@@ -42,10 +46,42 @@ export default function App() {
             }
           />
           <Route
+            path="/repairs"
+            element={
+              <RequireAuth>
+                <RepairsPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/installments"
+            element={
+              <RequireAuth>
+                <InstallmentsPage />
+              </RequireAuth>
+            }
+          />
+          <Route
             path="/stock"
             element={
               <RequireAuth>
                 <StockPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <RequireAuth>
+                <DashboardPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <RequireAuth>
+                <ReportsPage />
               </RequireAuth>
             }
           />
@@ -63,3 +99,4 @@ export default function App() {
     </div>
   );
 }
+

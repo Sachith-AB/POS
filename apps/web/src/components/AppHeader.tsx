@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
+import { Button } from './Button';
 import { logoutRequested } from '../features/auth/authSlice';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -21,23 +22,39 @@ export function AppHeader() {
           <NavLink to="/pos" className={linkClass}>
             POS
           </NavLink>
+          <NavLink to="/repairs" className={linkClass}>
+            Repairs
+          </NavLink>
+          <NavLink to="/installments" className={linkClass}>
+            Installments
+          </NavLink>
           <NavLink to="/stock" className={linkClass}>
             Stock
           </NavLink>
           {employee.role === 'OWNER' ? (
-            <NavLink to="/settings" className={linkClass}>
-              Settings
-            </NavLink>
+            <>
+              <NavLink to="/dashboard" className={linkClass}>
+                Dashboard
+              </NavLink>
+              <NavLink to="/reports" className={linkClass}>
+                Reports
+              </NavLink>
+              <NavLink to="/settings" className={linkClass}>
+                Settings
+              </NavLink>
+            </>
           ) : null}
+
           <span className="px-2.5 py-1.5 text-sm text-muted">
             {employee.name} ({employee.role})
           </span>
-          <button
+          <Button
             onClick={() => dispatch(logoutRequested())}
-            className="rounded-md border border-border px-2.5 py-1.5 text-sm text-ink hover:bg-canvas"
+            variant="secondary"
+            className="py-1.5 px-2.5"
           >
             Switch User
-          </button>
+          </Button>
         </nav>
       ) : null}
     </header>

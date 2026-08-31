@@ -15,12 +15,14 @@ export interface PosState {
 }
 
 export interface ReceiptSnapshot {
+  id: string;
   items: CartLine[];
   discount: number;
   total: number;
   customerName: string | null;
   completedAt: string;
 }
+
 
 const initialState: PosState = {
   bills: Array.from({ length: MAX_PARKED_BILLS }, emptyBillSlot),
@@ -115,6 +117,9 @@ const posSlice = createSlice({
       state.completing = false;
       state.error = action.payload;
     },
+    lastCompletedCleared(state) {
+      state.lastCompleted = null;
+    },
     cartAutosaveRequested() {},
   },
   // Switching cashiers must never leave the outgoing employee's in-progress
@@ -144,6 +149,7 @@ export const {
   completingStarted,
   saleCompleted,
   saleCompleteFailed,
+  lastCompletedCleared,
   cartAutosaveRequested,
 } = posSlice.actions;
 

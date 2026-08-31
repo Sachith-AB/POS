@@ -85,13 +85,14 @@ function* completeWorker(action: ReturnType<typeof saleCompleteRequested>) {
   try {
     const saleId: string | null = yield call(ensureSaleSaved, billIndex);
     if (!saleId) throw new Error('Cannot complete an empty sale');
-    const result: { total: string | number } = yield call(
+    const result: { id: string; total: string | number } = yield call(
       api.post,
       `/sales/${saleId}/complete`,
       action.payload
     );
     yield put(
       saleCompleted({
+        id: result.id,
         items: bill.items,
         discount: bill.discount,
         total: Number(result.total),
@@ -99,6 +100,7 @@ function* completeWorker(action: ReturnType<typeof saleCompleteRequested>) {
         completedAt: new Date().toISOString(),
       })
     );
+
   } catch (err) {
     yield put(saleCompleteFailed(err instanceof Error ? err.message : 'Failed to complete sale'));
   }

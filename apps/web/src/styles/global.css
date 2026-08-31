@@ -29,12 +29,13 @@ body {
 }
 
 /*
- * Receipt / label sheet: invisible in the normal UI, the only thing shown
+ * Receipt / label sheet / repair slip: invisible in the normal UI, the only thing shown
  * when printing (Section 7). This show/hide-everything-else trick is a
  * page-level concern that doesn't map onto component utility classes, so it
  * stays as plain CSS; the content inside each is styled with Tailwind.
  */
 .receipt,
+.repair-slip,
 .label-sheet {
   display: none;
 }
@@ -45,11 +46,14 @@ body {
   }
   .receipt,
   .receipt *,
+  .repair-slip,
+  .repair-slip *,
   .label-sheet,
   .label-sheet * {
     visibility: visible;
   }
   .receipt,
+  .repair-slip,
   .label-sheet {
     display: block;
     position: absolute;
@@ -57,3 +61,4 @@ body {
     left: 0;
   }
 }
+
