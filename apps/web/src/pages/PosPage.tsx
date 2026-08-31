@@ -243,8 +243,9 @@ export function PosPage() {
           <Input
             ref={amountRef}
             type="number"
-            placeholder={total.toFixed(2)}
-            value={amount}
+            placeholder={'00.0'}
+            disabled
+            value={total.toFixed(2)}
             onChange={(e) => setAmount(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleComplete();

@@ -43,9 +43,9 @@ export function DashboardPage() {
   };
 
   return (
-    <div className="flex h-full flex-col min-h-0 bg-canvas overflow-y-auto p-6 space-y-6">
+    <div className="flex h-full flex-col min-h-0 bg-canvas overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-ink">Owner Dashboard</h1>
           <p className="text-xs text-muted">Real-time store performance, revenue metrics, and inventory health</p>
@@ -54,8 +54,9 @@ export function DashboardPage() {
           onClick={() => dispatch(dashboardDataRequested())}
           loading={loading}
           variant="secondary"
+          className="w-full sm:w-auto"
         >
-          🔄 Refresh Data
+          Refresh
         </Button>
       </div>
 
@@ -68,7 +69,7 @@ export function DashboardPage() {
       {summary ? (
         <>
           {/* KPI Cards Grid */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Sales Card */}
             <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
               <span className="text-[10px] font-bold uppercase text-muted tracking-wider block">Today's Transactions</span>
@@ -112,89 +113,91 @@ export function DashboardPage() {
           </div>
 
           {/* Charts & Top-Selling Layout */}
-          <div className="grid grid-cols-[1fr_360px] gap-6 min-h-0">
+          <div className="flex flex-col lg:grid lg:grid-cols-[1fr_360px] gap-6 min-h-0">
             {/* Left Column: Hourly sales SVG Chart */}
             <div className="rounded-xl border border-border bg-surface p-5 shadow-sm space-y-4">
               <h2 className="text-xs font-bold text-ink uppercase tracking-wider">Today's Hourly Sales Trend</h2>
               
-              <div className="relative w-full overflow-hidden">
-                <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="w-full h-auto overflow-visible">
-                  {/* Grid Lines */}
-                  {[0, 0.25, 0.5, 0.75, 1].map((r, i) => {
-                    const y = paddingTop + plotHeight * (1 - r);
-                    const val = maxTotal * r;
-                    return (
-                      <g key={i} className="opacity-40">
-                        <line
-                          x1={paddingLeft}
-                          y1={y}
-                          x2={chartWidth - paddingRight}
-                          y2={y}
-                          stroke="var(--color-border)"
-                          strokeWidth="1"
-                          strokeDasharray="4,4"
-                        />
+              <div className="relative w-full overflow-x-auto pb-2">
+                <div className="w-full min-w-[640px] h-[160px]">
+                  <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="w-full h-full overflow-visible">
+                    {/* Grid Lines */}
+                    {[0, 0.25, 0.5, 0.75, 1].map((r, i) => {
+                      const y = paddingTop + plotHeight * (1 - r);
+                      const val = maxTotal * r;
+                      return (
+                        <g key={i} className="opacity-40">
+                          <line
+                            x1={paddingLeft}
+                            y1={y}
+                            x2={chartWidth - paddingRight}
+                            y2={y}
+                            stroke="var(--color-border)"
+                            strokeWidth="1"
+                            strokeDasharray="4,4"
+                          />
+                          <text
+                            x={paddingLeft - 8}
+                            y={y + 3}
+                            textAnchor="end"
+                            className="fill-muted font-mono text-[9px] font-semibold"
+                          >
+                            {val > 1000 ? `${(val / 1000).toFixed(0)}k` : val.toFixed(0)}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* Hour Axes labels */}
+                    {chartData.filter((_, idx) => idx % 3 === 0).map((d, i) => {
+                      const idx = i * 3;
+                      const x = paddingLeft + (idx * (plotWidth / 23));
+                      return (
                         <text
-                          x={paddingLeft - 8}
-                          y={y + 3}
-                          textAnchor="end"
+                          key={i}
+                          x={x}
+                          y={chartHeight - 6}
+                          textAnchor="middle"
                           className="fill-muted font-mono text-[9px] font-semibold"
                         >
-                          {val > 1000 ? `${(val / 1000).toFixed(0)}k` : val.toFixed(0)}
+                          {d.hour}
                         </text>
-                      </g>
-                    );
-                  })}
+                      );
+                    })}
 
-                  {/* Hour Axes labels */}
-                  {chartData.filter((_, idx) => idx % 3 === 0).map((d, i) => {
-                    const idx = i * 3;
-                    const x = paddingLeft + (idx * (plotWidth / 23));
-                    return (
-                      <text
-                        key={i}
-                        x={x}
-                        y={chartHeight - 6}
-                        textAnchor="middle"
-                        className="fill-muted font-mono text-[9px] font-semibold"
-                      >
-                        {d.hour}
-                      </text>
-                    );
-                  })}
+                    {/* Bars */}
+                    {chartData.map((d, idx) => {
+                      const barWidth = Math.max(2, (plotWidth / 24) * 0.7);
+                      const x = paddingLeft + (idx * (plotWidth / 23)) - (barWidth / 2);
+                      const barHeight = (d.total / maxTotal) * plotHeight;
+                      const y = paddingTop + plotHeight - barHeight;
 
-                  {/* Bars */}
-                  {chartData.map((d, idx) => {
-                    const barWidth = Math.max(2, (plotWidth / 24) * 0.7);
-                    const x = paddingLeft + (idx * (plotWidth / 23)) - (barWidth / 2);
-                    const barHeight = (d.total / maxTotal) * plotHeight;
-                    const y = paddingTop + plotHeight - barHeight;
-
-                    return (
-                      <g key={idx} className="group cursor-pointer">
-                        {/* Interactive hover background */}
-                        <rect
-                          x={x - 2}
-                          y={paddingTop}
-                          width={barWidth + 4}
-                          height={plotHeight}
-                          className="fill-transparent hover:fill-primary/5 transition-colors"
-                        />
-                        {/* Actual data bar */}
-                        <rect
-                          x={x}
-                          y={y}
-                          width={barWidth}
-                          height={Math.max(1, barHeight)}
-                          rx="2"
-                          className="fill-primary group-hover:fill-primary-hover transition-colors"
-                        />
-                        {/* Tooltip on hover */}
-                        <title>{`${d.hour}: Rs ${d.total.toFixed(2)}`}</title>
-                      </g>
-                    );
-                  })}
-                </svg>
+                      return (
+                        <g key={idx} className="group cursor-pointer">
+                          {/* Interactive hover background */}
+                          <rect
+                            x={x - 2}
+                            y={paddingTop}
+                            width={barWidth + 4}
+                            height={plotHeight}
+                            className="fill-transparent hover:fill-primary/5 transition-colors"
+                          />
+                          {/* Actual data bar */}
+                          <rect
+                            x={x}
+                            y={y}
+                            width={barWidth}
+                            height={Math.max(1, barHeight)}
+                            rx="2"
+                            className="fill-primary group-hover:fill-primary-hover transition-colors"
+                          />
+                          {/* Tooltip on hover */}
+                          <title>{`${d.hour}: Rs ${d.total.toFixed(2)}`}</title>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
               </div>
             </div>
 

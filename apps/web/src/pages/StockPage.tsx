@@ -508,7 +508,7 @@ function LabelPrinterPanel() {
   }
 
   return (
-    <div className="mt-4 rounded-xl border border-border bg-surface p-4">
+    <div className="mt-4 w-full rounded-xl border border-border bg-surface p-4">
       <h3 className="font-semibold">Print Labels</h3>
       <Input
         placeholder="Search product to label"
@@ -569,7 +569,9 @@ export function StockPage() {
     <div className="p-4">
       <h2 className="mb-3 text-xl font-bold">Stock</h2>
       <ReceiveStockPanel />
-      <LabelPrinterPanel />
+      <div className='w-1/2'>
+        <LabelPrinterPanel />
+      </div>
     </div>
   );
 }
