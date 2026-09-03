@@ -53,10 +53,15 @@ const stockSlice = createSlice({
         name: string;
         costPrice: number;
         sellPrice: number;
+        wholesalePrice?: number;
+        businessPrice?: number;
+        warrantyPeriodId?: string;
+        warrantyDurationDays?: number;
         quantity: number;
         category: string;
       }>
     ) {},
+
     lineAdded(state, action: PayloadAction<PendingReceiveLine>) {
       const existing = state.pendingLines.find((l) => l.productId === action.payload.productId);
       if (existing) {

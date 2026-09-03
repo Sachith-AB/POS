@@ -14,6 +14,15 @@ export interface InstallmentPlan {
   saleId: string;
   scheduleJson: any; // InstallmentScheduleItem[]
   remainingBalance: string | number;
+  totalPayable?: string | number | null;
+  downPaymentPercent?: string | number | null;
+  interestMethod?: 'PERCENTAGE' | 'FIXED_AMOUNT';
+  interestValue?: string | number;
+  interestAmount?: string | number;
+  lateFeeAmount?: string | number;
+  agreementBarcode?: string | null;
+  guarantorPhotoUrl?: string | null;
+  guarantorConsentGiven?: boolean;
   status: string;
   guarantorName: string | null;
   guarantorNic: string | null;
@@ -22,6 +31,7 @@ export interface InstallmentPlan {
   createdAt: string;
   updatedAt: string;
   sale?: {
+
     id: string;
     total: string | number;
     subtotal: string | number;
@@ -119,15 +129,20 @@ const installmentsSlice = createSlice({
         downPayment: number;
         numberOfInstallments: number;
         intervalDays: number;
+        interestMethod?: 'PERCENTAGE' | 'FIXED_AMOUNT';
+        interestValue?: number;
         guarantorName?: string;
         guarantorNic?: string;
         guarantorPhone?: string;
         guarantorAddress?: string;
+        guarantorPhotoUrl?: string;
+        guarantorConsentGiven?: boolean;
       }>
     ) {
       state.saving = true;
       state.error = null;
     },
+
     planCreated(state, action: PayloadAction<InstallmentPlan>) {
       state.items = [action.payload, ...state.items];
       state.saving = false;

@@ -22,3 +22,14 @@ export const KEYBOARD_SHORTCUTS = {
 } as const;
 
 export const DEFAULT_PRIMARY_COLOR = '#1E40AF';
+
+export const DEFAULT_DISCOUNT_PERCENT = 10;
+export const DEFAULT_DOWN_PAYMENT_PERCENT = 35;
+export const DEFAULT_INSTALLMENT_PERIODS = [3, 6, 12];
+export const DEFAULT_FIRST_DAYS_WARRANTY = 3;
+export const DEFAULT_UNCOLLECTED_REPAIR_DAYS = 30;
+
+export const DEFAULT_WARRANTY_OPTIONS = [
+  { label: '6 Months', days: 180, appliesToSales: true, appliesToRepairs: true },
+  { label: '1 Year / 12 Months', days: 365, appliesToSales: true, appliesToRepairs: true },
+] as const;

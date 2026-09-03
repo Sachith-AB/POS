@@ -32,6 +32,36 @@ export type OutboxStatus = (typeof OUTBOX_STATUSES)[number];
 export const PAYMENT_METHODS = ['CASH', 'CARD', 'BANK_TRANSFER', 'EZ_CASH_ONLINE'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
+export const INSTALLMENT_PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER'] as const;
+export type InstallmentPaymentMethod = (typeof INSTALLMENT_PAYMENT_METHODS)[number];
+
+export const PRICE_TYPES = ['RETAIL', 'WHOLESALE', 'BUSINESS'] as const;
+export type PriceType = (typeof PRICE_TYPES)[number];
+
+export const INTEREST_METHODS = ['PERCENTAGE', 'FIXED_AMOUNT'] as const;
+export type InterestMethod = (typeof INTEREST_METHODS)[number];
+
+export const LATE_FEE_METHODS = ['PERCENTAGE', 'FIXED_AMOUNT'] as const;
+export type LateFeeMethod = (typeof LATE_FEE_METHODS)[number];
+
+export const COMMISSION_METHODS = ['PERCENTAGE', 'FIXED_AMOUNT'] as const;
+export type CommissionMethod = (typeof COMMISSION_METHODS)[number];
+
+export const SUPPLIER_TRANSACTION_TYPES = ['PURCHASE', 'PAYMENT', 'RETURN_CREDIT'] as const;
+export type SupplierTransactionType = (typeof SUPPLIER_TRANSACTION_TYPES)[number];
+
+export const SUPPLIER_RETURN_REASONS = ['DEFECTIVE', 'DAMAGED', 'WRONG_ITEM'] as const;
+export type SupplierReturnReason = (typeof SUPPLIER_RETURN_REASONS)[number];
+
+export const TRADE_IN_STATUSES = ['PENDING', 'ADJUSTED', 'IN_STOCK', 'SOLD'] as const;
+export type TradeInStatus = (typeof TRADE_IN_STATUSES)[number];
+
+export const DEFAULT_ACTION_TYPES = ['WARNING', 'BLOCK', 'SUSPEND', 'CUSTOM'] as const;
+export type DefaultActionType = (typeof DEFAULT_ACTION_TYPES)[number];
+
+export const OUTSOURCED_REPAIR_STATUSES = ['SENT', 'IN_PROGRESS', 'RETURNED', 'CANCELLED'] as const;
+export type OutsourcedRepairStatus = (typeof OUTSOURCED_REPAIR_STATUSES)[number];
+
 export const THEME_MODES = ['light', 'dark', 'system'] as const;
 export type ThemeModeSetting = (typeof THEME_MODES)[number];
 
@@ -40,3 +70,4 @@ export type BarcodeScannerMode = (typeof BARCODE_SCANNER_MODES)[number];
 
 export const RECEIPT_WIDTHS = ['58mm', '80mm'] as const;
 export type ReceiptWidth = (typeof RECEIPT_WIDTHS)[number];
+

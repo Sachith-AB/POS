@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FiTrash2 } from 'react-icons/fi';
+import { FiTrash2, FiExternalLink, FiTool, FiDollarSign } from 'react-icons/fi';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
 import {
   ticketsRequested,
@@ -13,9 +13,10 @@ import {
 } from '../features/repairs/repairsSlice';
 import { PhotoCapture } from '../components/PhotoCapture';
 import { Button } from '../components/Button';
-import { RepairSlip } from '../components/RepairSlip';
+import { A5RepairBill } from '../components/A5RepairBill';
 import { Input } from '../components/Input';
 import { REPAIR_STATUSES } from '@pos/shared';
+import { api } from '../lib/api';
 
 const STATUS_COLORS: Record<string, string> = {
   RECEIVED: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
@@ -26,48 +27,111 @@ const STATUS_COLORS: Record<string, string> = {
   CANCELLED: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
 };
 
+interface TechnicianItem {
+  id: string;
+  name: string;
+  role: string;
+}
+
+interface WarrantyOption {
+  id: string;
+  label: string;
+  durationDays: number;
+}
+
+interface InventoryProduct {
+  id: string;
+  name: string;
+  costPrice: number;
+  sellPrice: number;
+  quantity: number;
+}
+
 export function RepairsPage() {
   const dispatch = useAppDispatch();
   const { items, total, page, pages, selectedTicket, loading, saving, error, filters } =
     useAppSelector((s) => s.repairs);
+  const settings = useAppSelector((s) => s.settings.data);
 
   const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showPhotoCapture, setShowPhotoCapture] = useState(false);
-  
+  const [showOutsourceModal, setShowOutsourceModal] = useState(false);
+
+  // Aux state
+  const [technicians, setTechnicians] = useState<TechnicianItem[]>([]);
+  const [warranties, setWarranties] = useState<WarrantyOption[]>([]);
+  const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
+
   // Create ticket state
   const [phone, setPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [deviceInfo, setDeviceInfo] = useState('');
   const [issue, setIssue] = useState('');
-  const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
+  const [technicianId, setTechnicianId] = useState('');
+  const [advancePayment, setAdvancePayment] = useState('');
+  const [warrantyPeriodId, setWarrantyPeriodId] = useState('');
+  const [commissionMethod, setCommissionMethod] = useState<'PERCENTAGE' | 'FIXED_AMOUNT'>('PERCENTAGE');
+  const [commissionValue, setCommissionValue] = useState('0');
 
   // Update ticket state
   const [estimate, setEstimate] = useState<number>(0);
-  const [parts, setParts] = useState<{ name: string; cost: number }[]>([]);
+  const [editAdvance, setEditAdvance] = useState<number>(0);
+  const [editTechId, setEditTechId] = useState('');
+  const [parts, setParts] = useState<{ productId?: string; name: string; cost: number; quantity?: number }[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState('');
   const [newPartName, setNewPartName] = useState('');
   const [newPartCost, setNewPartCost] = useState('');
 
+  // Outsourced repair form state (Q22)
+  const [outPersonPlace, setOutPersonPlace] = useState('');
+  const [outSentDate, setOutSentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [outExpectedDate, setOutExpectedDate] = useState('');
+  const [outNotes, setOutNotes] = useState('');
+  const [outsourcedList, setOutsourcedList] = useState<any[]>([]);
+
   useEffect(() => {
     dispatch(ticketsRequested(filters));
+
+    // Load technicians
+    api.get<TechnicianItem[]>('/employees').then((res) => {
+      setTechnicians(res || []);
+    }).catch(() => {});
+
+    // Load repair warranties
+    api.get<WarrantyOption[]>('/warranties?repairs=true').then((res) => {
+      setWarranties(res || []);
+    }).catch(() => {});
+
+    // Load spare products
+    api.get<InventoryProduct[]>('/products').then((res) => {
+      setInventoryProducts(res || []);
+    }).catch(() => {});
   }, [dispatch]);
 
   // Load estimate and parts when ticket selection changes
   useEffect(() => {
     if (selectedTicket) {
       setEstimate(selectedTicket.estimate ? Number(selectedTicket.estimate) : 0);
+      setEditAdvance(selectedTicket.advancePayment ? Number(selectedTicket.advancePayment) : 0);
+      setEditTechId(selectedTicket.technicianId || settings?.defaultTechnicianId || '');
       try {
         const parsedParts = selectedTicket.partsJson
-          ? (typeof selectedTicket.partsJson === 'string'
-              ? JSON.parse(selectedTicket.partsJson)
-              : selectedTicket.partsJson)
+          ? typeof selectedTicket.partsJson === 'string'
+            ? JSON.parse(selectedTicket.partsJson)
+            : selectedTicket.partsJson
           : [];
         setParts(Array.isArray(parsedParts) ? parsedParts : []);
       } catch {
         setParts([]);
       }
+
+      // Load outsourced repairs for ticket
+      api.get<any[]>(`/outsourced-repairs?repairTicketId=${selectedTicket.id}`)
+        .then((data) => setOutsourcedList(data || []))
+        .catch(() => setOutsourcedList([]));
     }
-  }, [selectedTicket]);
+  }, [selectedTicket, settings]);
 
   function handleFilterStatusChange(status: string) {
     dispatch(filtersChanged({ status, page: 1 }));
@@ -76,7 +140,6 @@ export function RepairsPage() {
 
   function handleSearchChange(search: string) {
     dispatch(filtersChanged({ search, page: 1 }));
-    // Note: Sagas will debounce search changes automatically via filtersChanged
   }
 
   function handlePageChange(nextPage: number) {
@@ -94,6 +157,11 @@ export function RepairsPage() {
         customerName: customerName || undefined,
         deviceInfo,
         issue,
+        technicianId: technicianId || settings?.defaultTechnicianId || undefined,
+        advancePayment: advancePayment ? parseFloat(advancePayment) : 0,
+        warrantyPeriodId: warrantyPeriodId || undefined,
+        commissionMethod,
+        commissionValue: parseFloat(commissionValue) || 0,
       })
     );
 
@@ -102,16 +170,16 @@ export function RepairsPage() {
     setCustomerName('');
     setDeviceInfo('');
     setIssue('');
+    setAdvancePayment('');
     setShowCreateModal(false);
-    setPendingPhotos([]);
   }
 
-  function handleUpdateStatus(status: string) {
+  function handleUpdateStatus(newStatus: string) {
     if (!selectedTicket) return;
     dispatch(
       ticketUpdateRequested({
         id: selectedTicket.id,
-        input: { status },
+        input: { status: newStatus },
       })
     );
   }
@@ -123,6 +191,8 @@ export function RepairsPage() {
         id: selectedTicket.id,
         input: {
           estimate,
+          advancePayment: editAdvance,
+          technicianId: editTechId || undefined,
           partsJson: parts,
         },
       })
@@ -130,107 +200,139 @@ export function RepairsPage() {
   }
 
   function handleAddPart() {
-    if (!newPartName || !newPartCost) return;
-    const cost = parseFloat(newPartCost);
-    if (isNaN(cost)) return;
+    if (selectedProductId) {
+      const prod = inventoryProducts.find((p) => p.id === selectedProductId);
+      if (prod) {
+        setParts([
+          ...parts,
+          {
+            productId: prod.id,
+            name: prod.name,
+            cost: Number(prod.sellPrice),
+            quantity: 1,
+          },
+        ]);
+        setSelectedProductId('');
+        return;
+      }
+    }
 
-    const newParts = [...parts, { name: newPartName, cost }];
-    setParts(newParts);
+    if (!newPartName.trim()) return;
+    setParts([
+      ...parts,
+      {
+        name: newPartName.trim(),
+        cost: parseFloat(newPartCost) || 0,
+        quantity: 1,
+      },
+    ]);
     setNewPartName('');
     setNewPartCost('');
-    
-    // Auto-update estimate if estimate is 0 or sums parts
-    const partsTotal = newParts.reduce((sum, p) => sum + p.cost, 0);
-    if (estimate < partsTotal) {
-      setEstimate(partsTotal);
-    }
   }
 
   function handleRemovePart(index: number) {
-    const newParts = parts.filter((_, i) => i !== index);
-    setParts(newParts);
+    setParts(parts.filter((_, i) => i !== index));
   }
 
   function handlePhotoCaptured(file: File) {
-    if (selectedTicket) {
-      // Upload immediately for existing ticket
-      dispatch(photoUploadRequested({ id: selectedTicket.id, file }));
-    } else {
-      // Hold in state for new ticket creation (will be uploaded after ticket is created)
-      setPendingPhotos((prev) => [...prev, file]);
-    }
+    if (!selectedTicket) return;
+    dispatch(photoUploadRequested({ id: selectedTicket.id, file }));
     setShowPhotoCapture(false);
   }
 
   function handleDeletePhoto(index: number) {
     if (!selectedTicket) return;
-    if (window.confirm('Are you sure you want to delete this photo?')) {
-      dispatch(photoDeleteRequested({ id: selectedTicket.id, index }));
+    dispatch(photoDeleteRequested({ id: selectedTicket.id, index }));
+  }
+
+  async function handleCreateOutsourced(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedTicket || !outPersonPlace || !outSentDate) return;
+
+    try {
+      const created = await api.post('/outsourced-repairs', {
+        repairTicketId: selectedTicket.id,
+        personOrPlace: outPersonPlace,
+        sentDate: new Date(outSentDate).toISOString(),
+        expectedReturnDate: outExpectedDate ? new Date(outExpectedDate).toISOString() : null,
+        reminderNotes: outNotes || null,
+      });
+      setOutsourcedList([created, ...outsourcedList]);
+      setShowOutsourceModal(false);
+      setOutPersonPlace('');
+      setOutNotes('');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create outsourced repair');
     }
   }
 
   function handlePrintSlip() {
-    if (!selectedTicket) return;
     window.print();
   }
 
+  const remainingBalance = Math.max(0, estimate - editAdvance);
+
   return (
     <div className="flex h-full flex-col min-h-0 bg-canvas">
-      {/* Page Header */}
-      <div className="flex items-center justify-between border-b border-border bg-surface px-6 py-4">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-border bg-surface px-6 py-3.5">
         <div>
-          <h1 className="text-xl font-bold text-ink">Repair Ticketing</h1>
-          <p className="text-xs text-muted">Intake devices, track statuses, attach photos and print slips</p>
+          <h1 className="text-lg font-bold text-ink">Repairs &amp; Service Management</h1>
+          <p className="text-xs text-muted">A5 Bill Book, spare parts deduction, technician commissions, and outsourced repairs</p>
         </div>
-        <div className="flex gap-3">
-          {/* Toggle Views */}
+        <div className="flex items-center gap-2">
+          {/* Table / Kanban view toggle */}
           <div className="flex rounded-lg border border-border bg-canvas p-0.5">
-            <Button
+            <button
               onClick={() => setViewMode('table')}
-              variant={viewMode === 'table' ? 'primary' : 'secondary'}
-              className="py-1 px-3 text-xs"
+              className={`rounded-md px-2.5 py-1 text-xs font-semibold cursor-pointer ${
+                viewMode === 'table' ? 'bg-surface text-ink shadow-xs' : 'text-muted'
+              }`}
             >
-              List View
-            </Button>
-            <Button
+              List
+            </button>
+            <button
               onClick={() => setViewMode('kanban')}
-              variant={viewMode === 'kanban' ? 'primary' : 'secondary'}
-              className="py-1 px-3 text-xs"
+              className={`rounded-md px-2.5 py-1 text-xs font-semibold cursor-pointer ${
+                viewMode === 'kanban' ? 'bg-surface text-ink shadow-xs' : 'text-muted'
+              }`}
             >
-              Kanban Board
-            </Button>
+              Board
+            </button>
           </div>
+
           <Button
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => {
+              setTechnicianId(settings?.defaultTechnicianId || '');
+              setShowCreateModal(true);
+            }}
+            className="text-xs font-bold"
           >
-            + Intake New Device
+            + New Intake Ticket
           </Button>
         </div>
       </div>
 
-      {/* Main Content Pane */}
-      <div className="grid flex-1 grid-cols-[1fr_380px] min-h-0 gap-0">
-        {/* Left Side: Table or Kanban List */}
+      {/* Main Grid */}
+      <div className="grid flex-1 grid-cols-[1fr_440px] min-h-0 gap-0">
+        {/* Left Side: Ticket List / Kanban */}
         <div className="flex flex-col min-h-0 border-r border-border p-4">
-          {/* Filter Bar */}
-          <div className="flex flex-wrap gap-3 pb-4">
-            <div className="w-64">
-              <Input
-                placeholder="Search ticket number, customer, phone, device..."
-                value={filters.search}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                className="w-full"
-              />
-            </div>
+          <div className="flex gap-3 pb-3">
+            <Input
+              placeholder="Search by ticket #, customer, phone, device…"
+              value={filters.search}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              className="flex-1 text-xs"
+            />
             <select
               value={filters.status}
               onChange={(e) => handleFilterStatusChange(e.target.value)}
-              className="rounded-lg border border-border bg-surface px-3 py-2 text-xs text-ink focus:border-primary focus:outline-none"
+              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-ink focus:border-primary focus:outline-none cursor-pointer"
             >
               <option value="ALL">All Statuses</option>
               {REPAIR_STATUSES.map((status) => (
                 <option key={status} value={status}>
-                  {status}
+                  {status.replace('_', ' ')}
                 </option>
               ))}
             </select>
@@ -238,20 +340,19 @@ export function RepairsPage() {
 
           {loading && items.length === 0 ? (
             <div className="flex flex-1 items-center justify-center">
-              <p className="text-sm text-muted">Loading repairs...</p>
+              <p className="text-sm text-muted">Loading repair tickets...</p>
             </div>
           ) : viewMode === 'table' ? (
-            /* Table View */
             <div className="flex-1 overflow-y-auto rounded-xl border border-border bg-surface">
               <table className="w-full border-collapse text-left text-xs text-ink">
                 <thead>
                   <tr className="border-b border-border bg-canvas text-xs font-bold text-muted uppercase">
-                    <th className="px-4 py-3">Ticket</th>
-                    <th className="px-4 py-3">Customer</th>
-                    <th className="px-4 py-3">Device</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Estimate</th>
-                    <th className="px-4 py-3">Date</th>
+                    <th className="px-3.5 py-2.5">Ticket #</th>
+                    <th className="px-3.5 py-2.5">Device &amp; Issue</th>
+                    <th className="px-3.5 py-2.5">Customer</th>
+                    <th className="px-3.5 py-2.5">Estimate / Balance</th>
+                    <th className="px-3.5 py-2.5">Status</th>
+                    <th className="px-3.5 py-2.5">Intake Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -262,56 +363,72 @@ export function RepairsPage() {
                       </td>
                     </tr>
                   ) : (
-                    items.map((item) => (
-                      <tr
-                        key={item.id}
-                        onClick={() => dispatch(ticketDetailRequested(item.id))}
-                        className={`cursor-pointer hover:bg-canvas transition-colors ${
-                          selectedTicket?.id === item.id ? 'bg-canvas font-semibold' : ''
-                        }`}
-                      >
-                        <td className="px-4 py-3.5 font-bold text-primary">{item.ticketNumber}</td>
-                        <td className="px-4 py-3.5">
-                          <div>{item.customer?.name || 'Walk-in'}</div>
-                          <div className="text-[10px] text-muted">{item.customer?.phone}</div>
-                        </td>
-                        <td className="px-4 py-3.5 max-w-[200px] truncate">{item.deviceInfo}</td>
-                        <td className="px-4 py-3.5">
-                          <span
-                            className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                              STATUS_COLORS[item.status] || ''
-                            }`}
-                          >
-                            {item.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5 font-mono">
-                          {item.estimate ? `Rs ${Number(item.estimate).toFixed(2)}` : '—'}
-                        </td>
-                        <td className="px-4 py-3.5 text-muted">
-                          {new Date(item.createdAt).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    ))
+                    items.map((item) => {
+                      const est = item.estimate ? Number(item.estimate) : 0;
+                      const adv = item.advancePayment ? Number(item.advancePayment) : 0;
+                      const bal = Math.max(0, est - adv);
+
+                      return (
+                        <tr
+                          key={item.id}
+                          onClick={() => dispatch(ticketDetailRequested(item.id))}
+                          className={`cursor-pointer hover:bg-canvas transition-colors ${
+                            selectedTicket?.id === item.id ? 'bg-canvas font-semibold' : ''
+                          }`}
+                        >
+                          <td className="px-3.5 py-3 font-mono font-bold text-primary">
+                            {item.ticketNumber}
+                          </td>
+                          <td className="px-3.5 py-3 max-w-[160px]">
+                            <div className="font-semibold truncate">{item.deviceInfo}</div>
+                            <div className="text-[10px] text-muted truncate">{item.issue}</div>
+                          </td>
+                          <td className="px-3.5 py-3">
+                            <div className="font-medium">{item.customer?.name || 'Walk-in'}</div>
+                            <div className="text-[10px] text-muted">{item.customer?.phone}</div>
+                          </td>
+                          <td className="px-3.5 py-3 font-mono">
+                            <div>Rs {est.toFixed(0)}</div>
+                            {adv > 0 ? (
+                              <div className="text-[10px] text-rose-600 font-semibold">
+                                Bal: Rs {bal.toFixed(0)}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td className="px-3.5 py-3">
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                                STATUS_COLORS[item.status] || ''
+                              }`}
+                            >
+                              {item.status.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="px-3.5 py-3 text-muted text-[11px]">
+                            {new Date(item.createdAt).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
             </div>
           ) : (
             /* Kanban Board View */
-            <div className="flex-1 overflow-x-auto min-h-0 flex gap-4 p-1">
+            <div className="flex-1 overflow-x-auto min-h-0 flex gap-3 p-1">
               {REPAIR_STATUSES.map((colStatus) => {
                 const colItems = items.filter((item) => item.status === colStatus);
                 return (
                   <div
                     key={colStatus}
-                    className="flex flex-col w-64 shrink-0 rounded-xl bg-canvas border border-border"
+                    className="flex flex-col w-60 shrink-0 rounded-xl bg-canvas border border-border"
                   >
                     <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-surface rounded-t-xl">
-                      <span className="text-xs font-bold text-ink uppercase tracking-wider">
+                      <span className="text-[11px] font-bold text-ink uppercase tracking-wider">
                         {colStatus.replace('_', ' ')}
                       </span>
-                      <span className="rounded-full bg-canvas px-2 py-0.5 text-[10px] border border-border text-muted font-bold">
+                      <span className="rounded-full bg-canvas px-1.5 py-0.2 text-[10px] border border-border text-muted font-bold">
                         {colItems.length}
                       </span>
                     </div>
@@ -320,26 +437,20 @@ export function RepairsPage() {
                         <div
                           key={item.id}
                           onClick={() => dispatch(ticketDetailRequested(item.id))}
-                          className={`rounded-lg border border-border bg-surface p-3 cursor-pointer hover:shadow-sm hover:border-primary/50 transition-all ${
-                            selectedTicket?.id === item.id ? 'border-primary shadow-sm bg-primary/5' : ''
+                          className={`rounded-xl border border-border bg-surface p-2.5 cursor-pointer hover:shadow-xs transition-all ${
+                            selectedTicket?.id === item.id ? 'border-primary shadow-xs bg-primary/5' : ''
                           }`}
                         >
-                          <div className="flex justify-between items-start gap-2">
-                            <span className="font-bold text-xs text-primary">{item.ticketNumber}</span>
+                          <div className="flex justify-between items-start">
+                            <span className="font-bold text-xs font-mono text-primary">{item.ticketNumber}</span>
                             <span className="text-[9px] text-muted">
                               {new Date(item.createdAt).toLocaleDateString()}
                             </span>
                           </div>
-                          <div className="text-xs font-semibold text-ink mt-1 truncate">
-                            {item.deviceInfo}
-                          </div>
-                          <div className="text-[10px] text-muted mt-0.5 line-clamp-2">
-                            {item.issue}
-                          </div>
-                          <div className="flex justify-between items-center mt-2.5 pt-2 border-t border-border/50 text-[10px]">
-                            <span className="text-muted truncate">
-                              👤 {item.customer?.name || item.customer?.phone}
-                            </span>
+                          <div className="text-xs font-semibold text-ink mt-1 truncate">{item.deviceInfo}</div>
+                          <div className="text-[10px] text-muted mt-0.5 line-clamp-2">{item.issue}</div>
+                          <div className="flex justify-between items-center mt-2 pt-1.5 border-t border-border/50 text-[10px]">
+                            <span className="text-muted truncate">📞 {item.customer?.phone}</span>
                             {item.estimate ? (
                               <span className="font-mono font-bold text-ink">
                                 Rs {Number(item.estimate).toFixed(0)}
@@ -357,24 +468,24 @@ export function RepairsPage() {
 
           {/* Pagination */}
           {pages > 1 ? (
-            <div className="flex items-center justify-between border-t border-border pt-4 mt-3">
+            <div className="flex items-center justify-between border-t border-border pt-3 mt-2">
               <span className="text-xs text-muted">
-                Showing page {page} of {pages} ({total} total tickets)
+                Page {page} of {pages} ({total} tickets)
               </span>
               <div className="flex gap-1.5">
                 <Button
                   disabled={page === 1}
                   onClick={() => handlePageChange(page - 1)}
                   variant="secondary"
-                  className="py-1 px-3"
+                  className="py-1 px-3 text-xs"
                 >
-                  Previous
+                  Prev
                 </Button>
                 <Button
                   disabled={page === pages}
                   onClick={() => handlePageChange(page + 1)}
                   variant="secondary"
-                  className="py-1 px-3"
+                  className="py-1 px-3 text-xs"
                 >
                   Next
                 </Button>
@@ -384,35 +495,37 @@ export function RepairsPage() {
         </div>
 
         {/* Right Side: Selected Ticket Detailed Editor */}
-        <div className="flex flex-col min-h-0 bg-surface p-6 overflow-y-auto">
+        <div className="flex flex-col min-h-0 bg-surface p-5 overflow-y-auto">
           {selectedTicket ? (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {/* Detail Header */}
-              <div className="flex items-start justify-between border-b border-border pb-4">
+              <div className="flex items-start justify-between border-b border-border pb-3">
                 <div>
-                  <h2 className="text-base font-bold text-ink">{selectedTicket.ticketNumber}</h2>
+                  <h2 className="text-base font-extrabold text-ink font-mono">{selectedTicket.ticketNumber}</h2>
                   <p className="text-[10px] text-muted">
                     Intake: {new Date(selectedTicket.createdAt).toLocaleString()}
                   </p>
                 </div>
-                <div className="flex flex-col items-end gap-1.5">
+                <div className="flex items-center gap-1.5">
                   <span
-                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                    className={`rounded-full border px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
                       STATUS_COLORS[selectedTicket.status] || ''
                     }`}
                   >
-                    {selectedTicket.status}
+                    {selectedTicket.status.replace('_', ' ')}
                   </span>
                 </div>
               </div>
 
-              {/* Status Stepper */}
+              {/* Status Update Stepper */}
               <div>
-                <label className="text-xs font-semibold text-muted block mb-2">Progress Status</label>
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">
+                  Update Repair Status
+                </label>
                 <select
                   value={selectedTicket.status}
                   onChange={(e) => handleUpdateStatus(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-ink focus:border-primary focus:outline-none"
+                  className="w-full rounded-lg border border-border bg-canvas px-3 py-1.5 text-xs text-ink focus:border-primary focus:outline-none cursor-pointer font-medium"
                 >
                   {REPAIR_STATUSES.map((status) => (
                     <option key={status} value={status}>
@@ -423,112 +536,222 @@ export function RepairsPage() {
               </div>
 
               {/* Customer and Device Info */}
-              <div className="rounded-xl border border-border bg-canvas p-4 space-y-3">
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-muted block">Customer Details</span>
-                  <span className="text-xs font-semibold text-ink block">
+              <div className="rounded-xl border border-border bg-canvas p-3 space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="font-semibold text-ink">
                     {selectedTicket.customer?.name || 'Walk-in Customer'}
                   </span>
-                  <span className="text-xs text-muted font-mono block">
-                    📞 {selectedTicket.customer?.phone}
-                  </span>
+                  <span className="font-mono text-muted">📞 {selectedTicket.customer?.phone}</span>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold uppercase text-muted block">Device Info</span>
-                  <span className="text-xs text-ink block break-words">{selectedTicket.deviceInfo}</span>
+                  <span className="text-[10px] font-bold uppercase text-muted block">Device</span>
+                  <span className="text-ink font-medium">{selectedTicket.deviceInfo}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold uppercase text-muted block">Reported Problem</span>
-                  <span className="text-xs text-muted block break-words">{selectedTicket.issue}</span>
+                  <span className="text-muted italic">{selectedTicket.issue}</span>
                 </div>
               </div>
 
-              {/* Estimate Cost & Parts JSON */}
-              <div className="space-y-4 border-t border-border pt-4">
-                <h3 className="text-xs font-bold text-ink uppercase tracking-wide">Costs & Parts</h3>
-                
+              {/* Technician Assignment & Financial Summary (Q23, Q24) */}
+              <div className="rounded-xl border border-border bg-canvas p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase text-muted flex items-center gap-1">
+                    <FiTool className="h-3 w-3" /> Technician &amp; Billing
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-muted block mb-0.5">Assigned Technician</label>
+                    <select
+                      value={editTechId}
+                      onChange={(e) => setEditTechId(e.target.value)}
+                      className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-ink"
+                    >
+                      <option value="">Default Technician</option>
+                      {technicians.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-muted block mb-0.5">Advance Paid</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="0.00"
+                      value={editAdvance === 0 ? '' : editAdvance}
+                      onChange={(e) => setEditAdvance(e.target.value === '' ? 0 : Number(e.target.value))}
+                      className="py-1 text-xs font-mono"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="text-xs text-muted block mb-1.5">Cost Estimate (Rs)</label>
+                  <label className="text-[10px] text-muted block mb-0.5">Cost Estimate (Rs)</label>
                   <Input
                     type="number"
-                    placeholder='0'
-                    value={estimate}
-                    onChange={(e) => setEstimate(Number(e.target.value))}
-                    className="w-full font-mono text-sm"
+                    min={0}
+                    placeholder="0.00"
+                    value={estimate === 0 ? '' : estimate}
+                    onChange={(e) => setEstimate(e.target.value === '' ? 0 : Number(e.target.value))}
+                    className="w-full font-mono text-sm py-1 font-bold"
                   />
                 </div>
 
-                {/* Parts Used List */}
-                <div className="space-y-2">
-                  <label className="text-xs text-muted block">Parts Used</label>
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                    {parts.length === 0 ? (
-                      <p className="text-[10px] text-muted italic">No parts recorded yet.</p>
-                    ) : (
-                      parts.map((part, index) => (
-                        <div
-                          key={index}
-                          className="flex justify-between items-center rounded-lg border border-border bg-canvas px-3 py-1.5 text-xs text-ink"
-                        >
-                          <span className="truncate">{part.name}</span>
-                          <div className="flex items-center gap-2 font-mono">
-                            <span>Rs {part.cost.toFixed(2)}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemovePart(index)}
-                              className="text-danger hover:text-danger-hover font-bold px-1"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                {/* Remaining Balance Display (Q23) */}
+                <div className="rounded-lg bg-surface border border-border p-2 flex justify-between items-center text-xs font-mono">
+                  <span className="text-muted">Remaining Balance:</span>
+                  <span className="font-bold text-rose-600 text-sm">
+                    Rs {remainingBalance.toFixed(2)}
+                  </span>
+                </div>
+              </div>
 
-                  {/* Add Part Form */}
-                  <div className="flex gap-1.5 mt-2">
-                    <Input
-                      placeholder="Part name"
-                      value={newPartName}
-                      onChange={(e) => setNewPartName(e.target.value)}
-                      className="flex-1 text-xs"
-                    />
-                    <Input
-                      placeholder="Cost"
-                      type="number"
-                      value={newPartCost}
-                      onChange={(e) => setNewPartCost(e.target.value)}
-                      className="w-20 font-mono text-xs"
-                    />
-                    <Button
-                      type="button"
-                      onClick={handleAddPart}
-                      className="px-3"
-                    >
-                      +
-                    </Button>
-                  </div>
+              {/* Spare Parts Linking & Inventory Stock Deduction (Q21) */}
+              <div className="space-y-2 border-t border-border pt-3">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-[10px] font-bold text-ink uppercase tracking-wider">
+                    Spare Parts (Auto Stock Deduction)
+                  </h3>
+                </div>
+
+                {/* Pick from Inventory */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-muted block">Select from Parts Inventory</label>
+                  <select
+                    value={selectedProductId}
+                    onChange={(e) => setSelectedProductId(e.target.value)}
+                    className="w-full rounded border border-border bg-canvas px-2 py-1 text-xs text-ink"
+                  >
+                    <option value="">-- Choose Inventory Spare Part --</option>
+                    {inventoryProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (Stock: {p.quantity}) - Rs {Number(p.sellPrice).toFixed(2)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Custom Part Name / Cost Input */}
+                <div className="flex gap-1.5 mt-1">
+                  <Input
+                    placeholder="Or custom part name"
+                    value={newPartName}
+                    onChange={(e) => setNewPartName(e.target.value)}
+                    className="flex-1 text-xs py-1"
+                  />
+                  <Input
+                    placeholder="Cost"
+                    type="number"
+                    value={newPartCost}
+                    onChange={(e) => setNewPartCost(e.target.value)}
+                    className="w-20 font-mono text-xs py-1"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleAddPart}
+                    className="px-2.5 py-1 text-xs font-bold"
+                  >
+                    + Add
+                  </Button>
+                </div>
+
+                {/* Parts Used List */}
+                <div className="space-y-1 max-h-32 overflow-y-auto mt-2">
+                  {parts.length === 0 ? (
+                    <p className="text-[10px] text-muted italic">No parts recorded yet.</p>
+                  ) : (
+                    parts.map((part, index) => (
+                      <div
+                        key={index}
+                        className="flex justify-between items-center rounded-lg border border-border bg-canvas px-2.5 py-1 text-xs text-ink"
+                      >
+                        <span className="truncate text-[11px]">{part.name}</span>
+                        <div className="flex items-center gap-2 font-mono text-[11px]">
+                          <span>Rs {part.cost.toFixed(2)}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePart(index)}
+                            className="text-rose-500 font-bold px-1 hover:text-rose-700 cursor-pointer"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 <Button
                   type="button"
                   onClick={handleSaveEstimateAndParts}
                   loading={saving}
-                  className="w-full"
+                  className="w-full py-1.5 text-xs font-bold mt-2"
                 >
-                  Save Estimate &amp; Parts
+                  Save Charges &amp; Parts
                 </Button>
               </div>
 
-              {/* Photos Gallery */}
-              <div className="space-y-3 border-t border-border pt-4">
+              {/* Outsourced Repair Section (Q22) */}
+              <div className="space-y-2 border-t border-border pt-3">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-xs font-bold text-ink uppercase tracking-wide">Device Photos</h3>
+                  <h3 className="text-[10px] font-bold text-ink uppercase tracking-wider">
+                    Outsourced Repairs
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowOutsourceModal(true)}
+                    className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
+                  >
+                    + Log Outsourced
+                  </button>
+                </div>
+
+                {outsourcedList.length === 0 ? (
+                  <p className="text-[10px] text-muted italic">Device is repaired in-house.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {outsourcedList.map((o) => (
+                      <div
+                        key={o.id}
+                        className="rounded-lg border border-border bg-canvas p-2 text-xs space-y-0.5"
+                      >
+                        <div className="flex justify-between font-semibold">
+                          <span>{o.personOrPlace}</span>
+                          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.2 rounded font-mono">
+                            {o.status}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-[10px] text-muted">
+                          <span>Sent: {new Date(o.sentDate).toLocaleDateString()}</span>
+                          {o.expectedReturnDate ? (
+                            <span>Exp: {new Date(o.expectedReturnDate).toLocaleDateString()}</span>
+                          ) : null}
+                        </div>
+                        {o.reminderNotes ? (
+                          <p className="text-[10px] text-muted italic">{o.reminderNotes}</p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Device Photos (Q26) */}
+              <div className="space-y-2 border-t border-border pt-3">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-[10px] font-bold text-ink uppercase tracking-wide">
+                    Device Photos ({selectedTicket.photos.length})
+                  </h3>
                   <button
                     type="button"
                     onClick={() => setShowPhotoCapture(true)}
-                    className="text-[10px] font-bold text-primary hover:text-primary-hover"
+                    className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
                   >
                     + Add Photo
                   </button>
@@ -542,45 +765,37 @@ export function RepairsPage() {
                 ) : null}
 
                 <div className="grid grid-cols-3 gap-2">
-                  {selectedTicket.photos.length === 0 ? (
-                    <div className="col-span-3 rounded-lg border border-dashed border-border p-4 text-center text-[10px] text-muted">
-                      No photos attached. Click Add Photo to capture device condition.
-                    </div>
-                  ) : (
-                    selectedTicket.photos.map((photo, index) => (
-                      <div
-                        key={index}
-                        className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-canvas"
+                  {selectedTicket.photos.map((photo, index) => (
+                    <div
+                      key={index}
+                      className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-canvas"
+                    >
+                      <img
+                        src={`http://localhost:4000${photo}`}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePhoto(index)}
+                        className="absolute right-1 top-1 rounded bg-black/60 p-1 text-white hover:bg-rose-600 transition-colors cursor-pointer"
+                        title="Delete photo"
                       >
-                        <img
-                          src={`http://localhost:4000${photo}`}
-                          alt=""
-                          className="h-full w-full object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleDeletePhoto(index)}
-                          className="absolute right-1.5 top-1.5 rounded-full bg-white/95 p-1 text-rose-600 border border-border shadow-sm opacity-0 group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-700 transition-opacity cursor-pointer focus:outline-none flex items-center justify-center"
-                          title="Delete photo"
-                        >
-                          <FiTrash2 className="h-3.5 w-3.5" />
-                        </button>
-
-                      </div>
-                    ))
-                  )}
+                        <FiTrash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-2 border-t border-border pt-4">
+              {/* Action Buttons: A5 Bill Book Print (Q28) */}
+              <div className="flex gap-2 border-t border-border pt-3">
                 <Button
                   type="button"
                   onClick={handlePrintSlip}
-                  variant="secondary"
                   className="flex-1 py-2 text-xs font-bold"
                 >
-                  Print Repair Slip
+                  Print A5 Bill Book (2 Copies)
                 </Button>
                 <Button
                   type="button"
@@ -606,61 +821,132 @@ export function RepairsPage() {
 
       {/* Intake / Create Modal */}
       {showCreateModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-fade-in">
-          <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-lg">
-            <h2 className="text-base font-bold text-ink mb-4">New Device Repair Intake</h2>
-            <form onSubmit={handleCreateTicket} className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-muted block mb-1">
-                  Customer Phone <span className="text-danger">*</span>
-                </label>
-                <Input
-                  required
-                  placeholder="e.g. 0771234567"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full"
-                />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-border bg-surface p-6 shadow-xl overflow-y-auto max-h-[90vh]">
+            <h2 className="text-base font-bold text-ink mb-1">New Device Repair Intake</h2>
+            <p className="text-xs text-muted mb-4">Record customer details, assign technician, and record advance payment.</p>
+
+            <form onSubmit={handleCreateTicket} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-semibold text-muted block mb-0.5">
+                    Customer Phone <span className="text-rose-500">*</span>
+                  </label>
+                  <Input
+                    required
+                    placeholder="07XXXXXXXX"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-muted block mb-0.5">Customer Name</label>
+                  <Input
+                    placeholder="e.g. John Doe"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    className="w-full text-xs"
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-muted block mb-1">Customer Name</label>
-                <Input
-                  placeholder="e.g. John Doe"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-muted block mb-1">
-                  Device Model & Info <span className="text-danger">*</span>
+                <label className="text-[10px] font-semibold text-muted block mb-0.5">
+                  Device Model &amp; Info <span className="text-rose-500">*</span>
                 </label>
                 <Input
                   required
-                  placeholder="e.g. iPhone 13 Pro (Blue), Serial: XYZ..."
+                  placeholder="e.g. iPhone 14 Pro Max 256GB Deep Purple (IMEI: 35...)"
                   value={deviceInfo}
                   onChange={(e) => setDeviceInfo(e.target.value)}
-                  className="w-full"
+                  className="w-full text-xs"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-muted block mb-1">
-                  Problem Description <span className="text-danger">*</span>
+                <label className="text-[10px] font-semibold text-muted block mb-0.5">
+                  Reported Problem Description <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   required
-                  rows={3}
-                  placeholder="e.g. Cracked screen, front camera blurry, battery health 72%..."
+                  rows={2}
+                  placeholder="e.g. Display blank, touch working, physical drop..."
                   value={issue}
                   onChange={(e) => setIssue(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-ink focus:border-primary focus:outline-none"
+                  className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-ink focus:border-primary focus:outline-none"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 border-t border-border pt-4">
+              {/* Technician, Advance Payment, Warranty (Q20, Q23, Q24) */}
+              <div className="grid grid-cols-2 gap-3 border-t border-border pt-2">
+                <div>
+                  <label className="text-[10px] font-semibold text-muted block mb-0.5">Assigned Technician</label>
+                  <select
+                    value={technicianId}
+                    onChange={(e) => setTechnicianId(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink"
+                  >
+                    <option value="">Default Technician</option>
+                    {technicians.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-muted block mb-0.5">Advance Payment (Rs)</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="0.00"
+                    value={advancePayment}
+                    onChange={(e) => setAdvancePayment(e.target.value)}
+                    className="w-full text-xs font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-semibold text-muted block mb-0.5">Repair Warranty</label>
+                  <select
+                    value={warrantyPeriodId}
+                    onChange={(e) => setWarrantyPeriodId(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink"
+                  >
+                    <option value="">Default (First 3 Days Warranty Support)</option>
+                    {warranties.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.label} ({w.durationDays} days)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-muted block mb-0.5">Technician Commission</label>
+                  <div className="flex gap-1">
+                    <select
+                      value={commissionMethod}
+                      onChange={(e) => setCommissionMethod(e.target.value as any)}
+                      className="rounded border border-border bg-surface px-1.5 py-1 text-xs text-ink"
+                    >
+                      <option value="PERCENTAGE">%</option>
+                      <option value="FIXED_AMOUNT">Rs</option>
+                    </select>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={commissionValue}
+                      onChange={(e) => setCommissionValue(e.target.value)}
+                      className="w-20 text-xs font-mono py-1"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-border pt-3">
                 <Button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
@@ -681,8 +967,78 @@ export function RepairsPage() {
         </div>
       ) : null}
 
-      {/* Printable Area Slip */}
-      <RepairSlip ticket={selectedTicket} />
+      {/* Log Outsourced Repair Modal (Q22) */}
+      {showOutsourceModal && selectedTicket ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-xl">
+            <h3 className="text-sm font-bold text-ink mb-1">Outsource Repair Job</h3>
+            <p className="text-xs text-muted mb-3">Track outsourced technician/lab, return expectations, and reminders.</p>
+
+            <form onSubmit={handleCreateOutsourced} className="space-y-3">
+              <div>
+                <label className="text-[10px] font-semibold text-muted block mb-0.5">Outsourced Person / Center</label>
+                <Input
+                  required
+                  placeholder="e.g. Master Chip Tech / Repair Lab Majestic"
+                  value={outPersonPlace}
+                  onChange={(e) => setOutPersonPlace(e.target.value)}
+                  className="w-full text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-semibold text-muted block mb-0.5">Sent Date</label>
+                  <Input
+                    required
+                    type="date"
+                    value={outSentDate}
+                    onChange={(e) => setOutSentDate(e.target.value)}
+                    className="w-full text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-muted block mb-0.5">Expected Return Date</label>
+                  <Input
+                    type="date"
+                    value={outExpectedDate}
+                    onChange={(e) => setOutExpectedDate(e.target.value)}
+                    className="w-full text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-semibold text-muted block mb-0.5">Reminder / Job Notes</label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Needs CPU reballing, follow up on Friday..."
+                  value={outNotes}
+                  onChange={(e) => setOutNotes(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-canvas px-3 py-1.5 text-xs text-ink focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-border pt-3">
+                <Button
+                  type="button"
+                  onClick={() => setShowOutsourceModal(false)}
+                  variant="secondary"
+                  className="text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" className="text-xs font-bold">
+                  Save Outsourced Record
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {/* A5 2-Copy Bill Book Format Print View (Q28) */}
+      <A5RepairBill ticket={selectedTicket} />
     </div>
   );
 }

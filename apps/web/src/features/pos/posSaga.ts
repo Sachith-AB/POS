@@ -21,7 +21,12 @@ import {
 import type { BillSlot, CartLine } from './posTypes';
 
 function toItemsInput(items: CartLine[]) {
-  return items.map((i) => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice }));
+  return items.map((i) => ({
+    productId: i.productId,
+    quantity: i.quantity,
+    unitPrice: i.unitPrice,
+    priceType: i.priceType || 'RETAIL',
+  }));
 }
 
 /** Creates the parked sale on first save, or PATCHes it afterwards. Returns the saleId. */
@@ -34,7 +39,10 @@ function* ensureSaleSaved(billIndex: number) {
     const created: { id: string } = yield call(api.post, '/sales', {
       status: 'PARKED',
       discount: bill.discount,
+      discountPercent: bill.discountPercent,
       customerId: bill.customerId,
+      warrantyPeriodId: bill.warrantyPeriodId,
+      tradeInId: bill.tradeInId,
       items: toItemsInput(bill.items),
     });
     yield put(billSaleIdAssigned({ billIndex, saleId: created.id }));
@@ -43,11 +51,15 @@ function* ensureSaleSaved(billIndex: number) {
 
   yield call(api.patch, `/sales/${bill.saleId}`, {
     discount: bill.discount,
+    discountPercent: bill.discountPercent,
     customerId: bill.customerId,
+    warrantyPeriodId: bill.warrantyPeriodId,
+    tradeInId: bill.tradeInId,
     items: toItemsInput(bill.items),
   });
   return bill.saleId;
 }
+
 
 function* autosaveWorker() {
   const state: RootState = yield select();
@@ -106,12 +118,25 @@ function* completeWorker(action: ReturnType<typeof saleCompleteRequested>) {
   }
 }
 
+import {
+  linePriceChanged,
+  linePriceTypeChanged,
+  discountPercentChanged,
+  warrantySelected,
+  tradeInApplied,
+} from './posSlice';
+
 const AUTOSAVE_TRIGGERS = [
   itemScanned.type,
   lineQuantityChanged.type,
+  linePriceChanged.type,
+  linePriceTypeChanged.type,
   lineRemoved.type,
   lineRestored.type,
   discountChanged.type,
+  discountPercentChanged.type,
+  warrantySelected.type,
+  tradeInApplied.type,
 ];
 
 export default function* posSaga() {
@@ -121,3 +146,4 @@ export default function* posSaga() {
     takeLatest(saleCompleteRequested.type, completeWorker),
   ]);
 }
+

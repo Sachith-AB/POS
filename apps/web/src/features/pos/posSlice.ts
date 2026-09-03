@@ -39,19 +39,58 @@ const posSlice = createSlice({
   name: 'pos',
   initialState,
   reducers: {
-    itemScanned(state, action: PayloadAction<{ productId: string; name: string; barcode?: string | null; unitPrice: number }>) {
+    itemScanned(
+      state,
+      action: PayloadAction<{
+        productId: string;
+        name: string;
+        barcode?: string | null;
+        unitPrice: number;
+        retailPrice?: number;
+        wholesalePrice?: number | null;
+        businessPrice?: number | null;
+        priceType?: 'RETAIL' | 'WHOLESALE' | 'BUSINESS';
+      }>
+    ) {
       const bill = state.bills[state.activeIndex];
       const existing = bill.items.find((i) => i.productId === action.payload.productId);
       if (existing) {
         existing.quantity += 1;
       } else {
-        bill.items.push({ ...action.payload, quantity: 1 });
+        bill.items.push({
+          ...action.payload,
+          quantity: 1,
+          retailPrice: action.payload.retailPrice ?? action.payload.unitPrice,
+          priceType: action.payload.priceType ?? 'RETAIL',
+        });
       }
     },
     lineQuantityChanged(state, action: PayloadAction<{ productId: string; quantity: number }>) {
       const bill = state.bills[state.activeIndex];
       const line = bill.items.find((i) => i.productId === action.payload.productId);
       if (line) line.quantity = Math.max(1, action.payload.quantity);
+    },
+    linePriceChanged(state, action: PayloadAction<{ productId: string; unitPrice: number }>) {
+      const bill = state.bills[state.activeIndex];
+      const line = bill.items.find((i) => i.productId === action.payload.productId);
+      if (line) line.unitPrice = Math.max(0, action.payload.unitPrice);
+    },
+    linePriceTypeChanged(
+      state,
+      action: PayloadAction<{ productId: string; priceType: 'RETAIL' | 'WHOLESALE' | 'BUSINESS' }>
+    ) {
+      const bill = state.bills[state.activeIndex];
+      const line = bill.items.find((i) => i.productId === action.payload.productId);
+      if (line) {
+        line.priceType = action.payload.priceType;
+        if (action.payload.priceType === 'WHOLESALE' && line.wholesalePrice != null) {
+          line.unitPrice = Number(line.wholesalePrice);
+        } else if (action.payload.priceType === 'BUSINESS' && line.businessPrice != null) {
+          line.unitPrice = Number(line.businessPrice);
+        } else if (line.retailPrice != null) {
+          line.unitPrice = Number(line.retailPrice);
+        }
+      }
     },
     lineRemoved(state, action: PayloadAction<{ productId: string }>) {
       const bill = state.bills[state.activeIndex];
@@ -71,7 +110,24 @@ const posSlice = createSlice({
       state.lastRemoved = null;
     },
     discountChanged(state, action: PayloadAction<number>) {
-      state.bills[state.activeIndex].discount = Math.max(0, action.payload);
+      const bill = state.bills[state.activeIndex];
+      bill.discount = Math.max(0, action.payload);
+      const subtotal = bill.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+      bill.discountPercent = subtotal > 0 ? (bill.discount / subtotal) * 100 : 0;
+    },
+    discountPercentChanged(state, action: PayloadAction<number>) {
+      const bill = state.bills[state.activeIndex];
+      bill.discountPercent = Math.max(0, Math.min(100, action.payload));
+      const subtotal = bill.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+      bill.discount = Math.round(((subtotal * bill.discountPercent) / 100) * 100) / 100;
+    },
+    warrantySelected(state, action: PayloadAction<string | null>) {
+      state.bills[state.activeIndex].warrantyPeriodId = action.payload;
+    },
+    tradeInApplied(state, action: PayloadAction<{ tradeInId: string | null; tradeInValue: number }>) {
+      const bill = state.bills[state.activeIndex];
+      bill.tradeInId = action.payload.tradeInId;
+      bill.tradeInValue = action.payload.tradeInValue;
     },
     customerPhoneChanged(state, action: PayloadAction<string>) {
       state.bills[state.activeIndex].customerPhone = action.payload;
@@ -97,6 +153,7 @@ const posSlice = createSlice({
     priceCheckToggled(state) {
       state.priceCheckMode = !state.priceCheckMode;
     },
+
     savingStarted(state) {
       state.saving = true;
     },
@@ -132,10 +189,15 @@ const posSlice = createSlice({
 export const {
   itemScanned,
   lineQuantityChanged,
+  linePriceChanged,
+  linePriceTypeChanged,
   lineRemoved,
   lineRestored,
   lastRemovedCleared,
   discountChanged,
+  discountPercentChanged,
+  warrantySelected,
+  tradeInApplied,
   customerPhoneChanged,
   customerMatched,
   activeBillSwitched,
@@ -152,5 +214,6 @@ export const {
   lastCompletedCleared,
   cartAutosaveRequested,
 } = posSlice.actions;
+
 
 export default posSlice.reducer;

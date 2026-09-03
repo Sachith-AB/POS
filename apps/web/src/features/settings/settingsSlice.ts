@@ -14,7 +14,21 @@ export interface ShopSettings {
   cashDrawerEnabled: boolean;
   barcodeScannerMode: 'USB_HID' | 'CAMERA';
   receiptWidth: string;
+  defaultDiscountPercent?: number;
+  defaultDownPaymentPercent?: number;
+  defaultInterestMethod?: 'PERCENTAGE' | 'FIXED_AMOUNT';
+  defaultInterestValue?: number;
+  defaultLateFeeMethod?: 'PERCENTAGE' | 'FIXED_AMOUNT';
+  defaultLateFeeValue?: number;
+  defaultCommissionMethod?: 'PERCENTAGE' | 'FIXED_AMOUNT';
+  defaultCommissionValue?: number;
+  defaultTechnicianId?: string | null;
+  uncollectedRepairDays?: number;
+  firstDaysWarrantyDays?: number;
+  textlkApiToken?: string | null;
+  textlkSenderId?: string | null;
 }
+
 
 export interface SettingsState {
   data: ShopSettings | null;

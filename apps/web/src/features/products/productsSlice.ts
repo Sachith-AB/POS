@@ -7,11 +7,14 @@ export interface Product {
   name: string;
   costPrice: string | number;
   sellPrice: string | number;
+  wholesalePrice?: string | number | null;
+  businessPrice?: string | number | null;
   quantity: number;
   lowStockThreshold: number;
   category: string;
   isSerialized: boolean;
 }
+
 
 export interface ProductsState {
   results: Product[];

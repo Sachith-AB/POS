@@ -47,10 +47,13 @@ router.post(
   })
 );
 
+import { INSTALLMENT_PAYMENT_METHODS } from '@pos/shared';
+
 // 4. Record installment payment
 const recordPaymentPayload = installmentPaymentSchema.extend({
-  method: z.enum(['CASH', 'CARD', 'BANK_TRANSFER', 'EZ_CASH_ONLINE']),
+  method: z.enum(INSTALLMENT_PAYMENT_METHODS),
 });
+
 
 router.post(
   '/:id/pay',

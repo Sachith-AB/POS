@@ -15,20 +15,28 @@ export async function listProducts(params: { search?: string; category?: string 
           ]
         : undefined,
     },
+    include: { warrantyPeriod: true, categoryRel: true },
     orderBy: { name: 'asc' },
     take: 100,
   });
 }
 
 export async function getProductByBarcode(barcode: string) {
-  return prisma.product.findUnique({ where: { barcode } });
+  return prisma.product.findUnique({
+    where: { barcode },
+    include: { warrantyPeriod: true, categoryRel: true },
+  });
 }
 
 export async function getProductById(id: string) {
-  const product = await prisma.product.findUnique({ where: { id } });
+  const product = await prisma.product.findUnique({
+    where: { id },
+    include: { warrantyPeriod: true, categoryRel: true },
+  });
   if (!product) throw new HttpError(404, 'Product not found');
   return product;
 }
+
 
 export async function createProduct(input: ProductCreateInput) {
   return prisma.product.create({ data: input });

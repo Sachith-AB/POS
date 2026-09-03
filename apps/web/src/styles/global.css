@@ -29,6 +29,24 @@ body {
 }
 
 /*
+ * Globally hide scrollbars across the entire system while preserving full scrolling
+ */
+html,
+body,
+* {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE and Edge */
+}
+
+*::-webkit-scrollbar {
+  display: none !important; /* Chrome, Safari, Edge, Opera */
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+
+/*
  * Receipt / label sheet / repair slip: invisible in the normal UI, the only thing shown
  * when printing (Section 7). This show/hide-everything-else trick is a
  * page-level concern that doesn't map onto component utility classes, so it

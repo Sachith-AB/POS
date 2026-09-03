@@ -8,6 +8,15 @@ export interface RepairTicket {
   issue: string;
   status: string;
   estimate: string | number | null;
+  advancePayment?: string | number | null;
+  technicianId?: string | null;
+  technician?: { id: string; name: string } | null;
+  commissionMethod?: 'PERCENTAGE' | 'FIXED_AMOUNT';
+  commissionValue?: string | number | null;
+  commissionAmount?: string | number | null;
+  warrantyPeriodId?: string | null;
+  warrantyExpiresAt?: string | null;
+  outsourcedRepairs?: any[];
   partsJson: any;
   photos: string[];
   createdAt: string;
@@ -85,7 +94,20 @@ const repairsSlice = createSlice({
       state.selectedTicket = action.payload;
       state.loading = false;
     },
-    ticketCreateRequested(state, _action: PayloadAction<{ phone: string; customerName?: string; deviceInfo: string; issue: string }>) {
+    ticketCreateRequested(
+      state,
+      _action: PayloadAction<{
+        phone: string;
+        customerName?: string;
+        deviceInfo: string;
+        issue: string;
+        technicianId?: string;
+        advancePayment?: number;
+        warrantyPeriodId?: string;
+        commissionMethod?: 'PERCENTAGE' | 'FIXED_AMOUNT';
+        commissionValue?: number;
+      }>
+    ) {
       state.saving = true;
       state.error = null;
     },
@@ -95,11 +117,24 @@ const repairsSlice = createSlice({
     },
     ticketUpdateRequested(
       state,
-      _action: PayloadAction<{ id: string; input: { status?: string; estimate?: number; partsJson?: any } }>
+      _action: PayloadAction<{
+        id: string;
+        input: {
+          status?: string;
+          estimate?: number;
+          advancePayment?: number;
+          technicianId?: string;
+          commissionMethod?: 'PERCENTAGE' | 'FIXED_AMOUNT';
+          commissionValue?: number;
+          warrantyPeriodId?: string;
+          partsJson?: any;
+        };
+      }>
     ) {
       state.saving = true;
       state.error = null;
     },
+
     ticketUpdated(state, action: PayloadAction<RepairTicket>) {
       // Update in items list if present
       state.items = state.items.map((item) => (item.id === action.payload.id ? action.payload : item));
