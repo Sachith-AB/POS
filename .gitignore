@@ -6,9 +6,14 @@ build/
 !.env.example
 *.log
 *.pdf
+*.pak
 *.tsbuildinfo
 .DS_Store
 uploads/
 backups/
 .turbo/
+dist-electron/
+release/
+scratch/
+
 

@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>POS</title>
+    <link id="app-favicon" rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <script>
       (function () {
         try {
@@ -16,6 +17,15 @@
           document.documentElement.setAttribute('data-theme', resolved);
           if (stored && stored.primaryColor) {
             document.documentElement.style.setProperty('--color-primary', stored.primaryColor);
+          }
+          if (stored && stored.logoUrl) {
+            var fav = document.getElementById('app-favicon');
+            if (fav) {
+              fav.href = stored.logoUrl.startsWith('http') ? stored.logoUrl : 'http://localhost:4000' + stored.logoUrl;
+            }
+          }
+          if (stored && stored.companyName) {
+            document.title = stored.companyName + ' | POS';
           }
         } catch (e) {
           document.documentElement.setAttribute('data-theme', 'light');
