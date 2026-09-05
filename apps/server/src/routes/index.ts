@@ -17,6 +17,7 @@ import supplierReturnRoutes from './supplierReturns.js';
 import tradeInRoutes from './tradeIns.js';
 import outsourcedRepairRoutes from './outsourcedRepairs.js';
 import agreementRoutes from './agreements.js';
+import customerCategoryRoutes from './customerCategories.js';
 import defaultActionRoutes from './defaultActions.js';
 
 const router = Router();
@@ -28,6 +29,7 @@ router.use('/stock-movements', stockRoutes);
 router.use('/labels', labelRoutes);
 router.use('/sales', saleRoutes);
 router.use('/customers', customerRoutes);
+router.use('/customer-categories', customerCategoryRoutes);
 router.use('/repairs', repairRoutes);
 router.use('/installments', installmentRoutes);
 router.use('/dashboard', dashboardRoutes);

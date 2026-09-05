@@ -5,13 +5,10 @@ build/
 .env.*
 !.env.example
 *.log
+*.pdf
 *.tsbuildinfo
 .DS_Store
 uploads/
 backups/
 .turbo/
 
-# Client-provided source documents — not project source, keep out of the repo
-/00.pdf
-/YAGA-SOL-Mobile-Shop-POS-Solution-Overview.pdf
-/YAGA-DEV-Mobile-Shop-POS-Developer-Brief.pdf

@@ -21,6 +21,11 @@ export function RepairSlip({ ticket }: RepairSlipProps) {
       ) : null}
       <h3 className="text-center text-sm font-bold">{settings?.companyName ?? 'Shop'}</h3>
       <p className="text-center font-semibold text-xs mt-1">REPAIR INTAKE SLIP</p>
+      {ticket.isThreeDayWarranty ? (
+        <div className="my-1 text-center font-bold text-xs p-1 border-2 border-black bg-black/5">
+          3-DAY WARRANTY - NO CHARGE REPAIR
+        </div>
+      ) : null}
       <hr className="my-1 border-black border-dashed" />
       
       <div className="my-1 text-center">

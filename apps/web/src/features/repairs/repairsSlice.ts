@@ -16,6 +16,8 @@ export interface RepairTicket {
   commissionAmount?: string | number | null;
   warrantyPeriodId?: string | null;
   warrantyExpiresAt?: string | null;
+  isThreeDayWarranty?: boolean;
+  warrantySaleId?: string | null;
   outsourcedRepairs?: any[];
   partsJson: any;
   photos: string[];
@@ -27,6 +29,7 @@ export interface RepairTicket {
     name: string | null;
     notes: string | null;
   };
+  uncollectedDays?: number;
 }
 
 export interface RepairsState {
@@ -43,6 +46,19 @@ export interface RepairsState {
     search: string;
     page: number;
   };
+  // Q4 recent sale check
+  recentSaleCheck: {
+    hasRecentSale: boolean;
+    sale?: any;
+    firstDaysRule?: number;
+    loading?: boolean;
+  };
+  // Q25 uncollected repairs
+  uncollectedTickets: RepairTicket[];
+  uncollectedTotal: number;
+  uncollectedThresholdDays: number;
+  uncollectedLoading: boolean;
+  sendingSms: boolean;
 }
 
 const initialState: RepairsState = {
@@ -59,6 +75,15 @@ const initialState: RepairsState = {
     search: '',
     page: 1,
   },
+  recentSaleCheck: {
+    hasRecentSale: false,
+    loading: false,
+  },
+  uncollectedTickets: [],
+  uncollectedTotal: 0,
+  uncollectedThresholdDays: 30,
+  uncollectedLoading: false,
+  sendingSms: false,
 };
 
 const repairsSlice = createSlice({
@@ -106,6 +131,8 @@ const repairsSlice = createSlice({
         warrantyPeriodId?: string;
         commissionMethod?: 'PERCENTAGE' | 'FIXED_AMOUNT';
         commissionValue?: number;
+        isThreeDayWarranty?: boolean;
+        warrantySaleId?: string;
       }>
     ) {
       state.saving = true;
@@ -128,6 +155,8 @@ const repairsSlice = createSlice({
           commissionValue?: number;
           warrantyPeriodId?: string;
           partsJson?: any;
+          isThreeDayWarranty?: boolean;
+          warrantySaleId?: string;
         };
       }>
     ) {
@@ -154,6 +183,8 @@ const repairsSlice = createSlice({
     operationFailed(state, action: PayloadAction<string>) {
       state.saving = false;
       state.loading = false;
+      state.uncollectedLoading = false;
+      state.sendingSms = false;
       state.error = action.payload;
     },
     clearSelectedTicket(state) {
@@ -161,6 +192,45 @@ const repairsSlice = createSlice({
     },
     clearError(state) {
       state.error = null;
+    },
+
+    // Q4 Recent sale check actions
+    recentSaleCheckRequested(state, _action: PayloadAction<string>) {
+      state.recentSaleCheck.loading = true;
+    },
+    recentSaleCheckLoaded(
+      state,
+      action: PayloadAction<{ hasRecentSale: boolean; sale?: any; firstDaysRule?: number }>
+    ) {
+      state.recentSaleCheck = {
+        hasRecentSale: action.payload.hasRecentSale,
+        sale: action.payload.sale,
+        firstDaysRule: action.payload.firstDaysRule,
+        loading: false,
+      };
+    },
+    clearRecentSaleCheck(state) {
+      state.recentSaleCheck = { hasRecentSale: false, loading: false };
+    },
+
+    // Q25 Uncollected repairs actions
+    uncollectedTicketsRequested(state) {
+      state.uncollectedLoading = true;
+    },
+    uncollectedTicketsLoaded(
+      state,
+      action: PayloadAction<{ thresholdDays: number; total: number; items: RepairTicket[] }>
+    ) {
+      state.uncollectedTickets = action.payload.items;
+      state.uncollectedTotal = action.payload.total;
+      state.uncollectedThresholdDays = action.payload.thresholdDays;
+      state.uncollectedLoading = false;
+    },
+    sendUncollectedSmsRequested(state, _action: PayloadAction<string[] | undefined>) {
+      state.sendingSms = true;
+    },
+    sendUncollectedSmsDone(state) {
+      state.sendingSms = false;
     },
   },
 });
@@ -181,6 +251,13 @@ export const {
   operationFailed,
   clearSelectedTicket,
   clearError,
+  recentSaleCheckRequested,
+  recentSaleCheckLoaded,
+  clearRecentSaleCheck,
+  uncollectedTicketsRequested,
+  uncollectedTicketsLoaded,
+  sendUncollectedSmsRequested,
+  sendUncollectedSmsDone,
 } = repairsSlice.actions;
 
 export default repairsSlice.reducer;

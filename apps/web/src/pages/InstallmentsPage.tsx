@@ -12,6 +12,7 @@ import {
 } from '../features/installments/installmentsSlice';
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
+import { UndoToast } from '../components/UndoToast';
 import { api } from '../lib/api';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -65,6 +66,19 @@ export function InstallmentsPage() {
   // Record payment state: Strictly Cash & Bank Transfer only (Q12)
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState<'CASH' | 'BANK_TRANSFER'>('CASH');
+
+  // 5-Second Undo Toast State using shared UndoToast component
+  const [undoToast, setUndoToast] = useState<{
+    message: string;
+    onUndo: () => void;
+  } | null>(null);
+
+  function triggerUndoToast(message: string, onUndoCallback: () => void) {
+    setUndoToast({
+      message,
+      onUndo: onUndoCallback,
+    });
+  }
 
   useEffect(() => {
     dispatch(plansRequested(filters));
@@ -152,6 +166,21 @@ export function InstallmentsPage() {
     e.preventDefault();
     if (!selectedSale || !downPayment || !numberOfInstallments || !intervalDays) return;
 
+    const previousFormState = {
+      selectedSale,
+      downPayment,
+      numberOfInstallments,
+      intervalDays,
+      interestMethod,
+      interestValue,
+      guarantorName,
+      guarantorNic,
+      guarantorPhone,
+      guarantorAddress,
+      guarantorPhotoUrl,
+      guarantorConsent,
+    };
+
     dispatch(
       planCreateRequested({
         saleId: selectedSale.id,
@@ -178,11 +207,30 @@ export function InstallmentsPage() {
     setGuarantorAddress('');
     setGuarantorPhotoUrl('');
     setShowCreateModal(false);
+
+    triggerUndoToast('Installment plan created', () => {
+      setSelectedSale(previousFormState.selectedSale);
+      setDownPayment(previousFormState.downPayment);
+      setNumberOfInstallments(previousFormState.numberOfInstallments);
+      setIntervalDays(previousFormState.intervalDays);
+      setInterestMethod(previousFormState.interestMethod);
+      setInterestValue(previousFormState.interestValue);
+      setGuarantorName(previousFormState.guarantorName);
+      setGuarantorNic(previousFormState.guarantorNic);
+      setGuarantorPhone(previousFormState.guarantorPhone);
+      setGuarantorAddress(previousFormState.guarantorAddress);
+      setGuarantorPhotoUrl(previousFormState.guarantorPhotoUrl);
+      setGuarantorConsent(previousFormState.guarantorConsent);
+      setShowCreateModal(true);
+    });
   }
 
   function handleRecordPayment(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedPlan || !payAmount) return;
+
+    const previousAmount = payAmount;
+    const previousMethod = payMethod;
 
     dispatch(
       paymentRecordRequested({
@@ -193,6 +241,11 @@ export function InstallmentsPage() {
     );
 
     setPayAmount('');
+
+    triggerUndoToast(`Installment payment of Rs ${parseFloat(previousAmount).toFixed(2)} recorded`, () => {
+      setPayAmount(previousAmount);
+      setPayMethod(previousMethod);
+    });
   }
 
   // Helper to parse schedule JSON safely
@@ -475,7 +528,7 @@ export function InstallmentsPage() {
                       <span className="text-[10px] text-muted block">NIC: {selectedPlan.guarantorNic}</span>
                       <span className="text-[10px] text-muted block">Phone: {selectedPlan.guarantorPhone}</span>
                       {selectedPlan.guarantorConsentGiven ? (
-                        <span className="text-[9px] text-emerald-600 font-semibold block mt-0.5">✓ Consent Verified</span>
+                        <span className="text-[9px] text-emerald-600 font-semibold block mt-0.5">Consent Verified</span>
                       ) : null}
                     </>
                   ) : (
@@ -535,7 +588,7 @@ export function InstallmentsPage() {
                           <td className="px-3 py-2 font-mono">Rs {inst.amount.toFixed(2)}</td>
                           <td className="px-3 py-2">
                             {inst.paid ? (
-                              <span className="text-emerald-500 font-bold">✓ Paid</span>
+                              <span className="text-emerald-500 font-bold">Paid</span>
                             ) : inst.paidAmount && inst.paidAmount > 0 ? (
                               <span className="text-amber-500 font-bold">
                                 Part (Rs {inst.paidAmount.toFixed(0)})
@@ -601,7 +654,6 @@ export function InstallmentsPage() {
             </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center text-center p-4">
-              <span className="text-3xl text-muted block mb-2">📄</span>
               <h3 className="text-sm font-semibold text-ink">No Plan Selected</h3>
               <p className="text-xs text-muted max-w-[220px] mt-1">
                 Scan an agreement barcode or select from the list to view agreement sticker, guarantor info, and schedule.
@@ -849,6 +901,19 @@ export function InstallmentsPage() {
             </form>
           </div>
         </div>
+      ) : null}
+
+      {/* 5-Second Undo Toast Component */}
+      {undoToast ? (
+        <UndoToast
+          message={undoToast.message}
+          onUndo={() => {
+            const callback = undoToast.onUndo;
+            setUndoToast(null);
+            callback();
+          }}
+          onExpire={() => setUndoToast(null)}
+        />
       ) : null}
     </div>
   );

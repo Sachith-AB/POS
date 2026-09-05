@@ -110,6 +110,29 @@ export function PosPage() {
     };
   }, [dispatch]);
 
+  // Enter key shortcut to start a new sale when success modal is open
+  useEffect(() => {
+    if (!showSuccessModal) return;
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        setShowSuccessModal(false);
+        dispatch(lastCompletedCleared());
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showSuccessModal, dispatch]);
+
+  // Clear price check notification message when price check mode is turned off
+  useEffect(() => {
+    if (!priceCheckMode) {
+      setNotFound(null);
+    }
+  }, [priceCheckMode]);
+
   const subtotal = bill.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
   const tradeInDeduction = bill.tradeInValue || 0;
   const total = Math.max(0, subtotal - bill.discount - tradeInDeduction);
@@ -206,7 +229,10 @@ export function PosPage() {
                 </Button>
               ))}
               <Button
-                onClick={() => dispatch(priceCheckToggled())}
+                onClick={() => {
+                  dispatch(priceCheckToggled());
+                  setNotFound(null);
+                }}
                 variant={priceCheckMode ? 'primary' : 'secondary'}
                 className="py-1 px-2.5 text-xs"
               >
@@ -376,7 +402,7 @@ export function PosPage() {
             className="w-full text-sm"
           />
           {bill.customerName ? (
-            <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-1">✓ {bill.customerName}</p>
+            <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-1">{bill.customerName}</p>
           ) : null}
 
           <hr className="my-3 border-border" />
@@ -586,7 +612,6 @@ export function PosPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-lg rounded-2xl border border-border bg-surface p-6 shadow-2xl">
             <div className="text-center mb-4">
-              <span className="text-3xl block mb-1">🎉</span>
               <h2 className="text-lg font-bold text-ink">Sale Completed Successfully!</h2>
               <p className="text-xs text-muted font-medium">Receipt has been printed. Total: Rs {lastCompleted.total.toFixed(2)}</p>
             </div>
@@ -698,13 +723,14 @@ export function PosPage() {
               </Button>
               <Button
                 type="button"
+                autoFocus
                 onClick={() => {
                   setShowSuccessModal(false);
                   dispatch(lastCompletedCleared());
                 }}
                 className="w-full py-2 text-xs font-bold"
               >
-                New Sale
+                New Sale (Press Enter)
               </Button>
             </div>
           </div>

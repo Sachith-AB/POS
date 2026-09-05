@@ -7,6 +7,7 @@ import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { PinInput } from '../components/PinInput';
 import { Overlay } from '../components/Overlay';
+import { UndoToast } from '../components/UndoToast';
 import { api } from '../lib/api';
 
 const selectClass = 'w-full rounded-lg border border-border bg-canvas px-3 py-2 text-xs text-ink focus:border-primary focus:outline-none';
@@ -98,7 +99,7 @@ export function SettingsPage() {
   const saving = useAppSelector((s) => s.settings.saving);
   const employees = useAppSelector((s) => s.auth.employees);
 
-  const [activeTab, setActiveTab] = useState<'branding' | 'hardware' | 'defaults' | 'categories' | 'warranties' | 'overdue'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'hardware' | 'defaults' | 'categories' | 'customer-categories' | 'warranties' | 'overdue'>('branding');
   const [logoUploading, setLogoUploading] = useState(false);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
 
@@ -108,6 +109,10 @@ export function SettingsPage() {
   // Management lists
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [newCatName, setNewCatName] = useState('');
+  const [customerCategories, setCustomerCategories] = useState<Array<{ id: string; name: string; emoji: string | null; color: string | null; description: string | null }>>([]);
+  const [newCustCatName, setNewCustCatName] = useState('');
+  const [newCustCatEmoji, setNewCustCatEmoji] = useState('');
+  const [newCustCatColor, setNewCustCatColor] = useState('#3B82F6');
   const [warranties, setWarranties] = useState<WarrantyItem[]>([]);
   const [newWarrantyLabel, setNewWarrantyLabel] = useState('');
   const [newWarrantyDays, setNewWarrantyDays] = useState('30');
@@ -117,6 +122,19 @@ export function SettingsPage() {
   const [testPhone, setTestPhone] = useState('');
   const [testSmsLoading, setTestSmsLoading] = useState(false);
   const [testSmsResult, setTestSmsResult] = useState<string | null>(null);
+
+  // 5-Second Undo Toast State using shared UndoToast component
+  const [undoToast, setUndoToast] = useState<{
+    message: string;
+    onUndo: () => void;
+  } | null>(null);
+
+  function triggerUndoToast(message: string, onUndoCallback: () => void) {
+    setUndoToast({
+      message,
+      onUndo: onUndoCallback,
+    });
+  }
 
   const initialized = useRef(false);
   useEffect(() => {
@@ -149,20 +167,71 @@ export function SettingsPage() {
   useEffect(() => {
     dispatch(employeesRequested());
     loadCategories();
+    loadCustomerCategories();
     loadWarranties();
     loadActions();
   }, [dispatch]);
 
   const loadCategories = () => {
-    api.get<CategoryItem[]>('/categories').then((d) => setCategories(d || [])).catch(() => {});
+    api.get<CategoryItem[]>('/categories').then((d) => setCategories(d || [])).catch(() => { });
   };
 
+  const loadCustomerCategories = () => {
+    api.get<any[]>('/customer-categories').then((d) => setCustomerCategories(d || [])).catch(() => { });
+  };
+
+  async function handleAddCustomerCategory(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newCustCatName.trim()) return;
+    try {
+      await api.post('/customer-categories', {
+        name: newCustCatName.trim(),
+        emoji: newCustCatEmoji,
+        color: newCustCatColor,
+      });
+      setNewCustCatName('');
+      loadCustomerCategories();
+    } catch (err: any) {
+      alert(err.message || 'Failed to add customer category');
+    }
+  }
+
+  async function handleDeleteCustomerCategory(id: string) {
+    const itemToDelete = customerCategories.find((c) => c.id === id);
+    if (!itemToDelete) return;
+
+    // Immediately remove from UI state without confirm popup
+    setCustomerCategories((prev) => prev.filter((c) => c.id !== id));
+
+    try {
+      await api.delete(`/customer-categories/${id}`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete customer category');
+      loadCustomerCategories();
+      return;
+    }
+
+    triggerUndoToast(`Customer Group "${itemToDelete.name}" deleted`, async () => {
+      try {
+        await api.post('/customer-categories', {
+          name: itemToDelete.name,
+          emoji: itemToDelete.emoji,
+          color: itemToDelete.color,
+          description: itemToDelete.description,
+        });
+        loadCustomerCategories();
+      } catch (err: any) {
+        alert(err.message || 'Failed to restore customer group');
+      }
+    });
+  }
+
   const loadWarranties = () => {
-    api.get<WarrantyItem[]>('/warranties').then((d) => setWarranties(d || [])).catch(() => {});
+    api.get<WarrantyItem[]>('/warranties').then((d) => setWarranties(d || [])).catch(() => { });
   };
 
   const loadActions = () => {
-    api.get<DefaultActionItem[]>('/default-actions').then((d) => setActions(d || [])).catch(() => {});
+    api.get<DefaultActionItem[]>('/default-actions').then((d) => setActions(d || [])).catch(() => { });
   };
 
   async function handleAddCategory(e: React.FormEvent) {
@@ -178,13 +247,28 @@ export function SettingsPage() {
   }
 
   async function handleDeleteCategory(id: string) {
-    if (!confirm('Are you sure you want to delete this category?')) return;
+    const itemToDelete = categories.find((c) => c.id === id);
+    if (!itemToDelete) return;
+
+    // Immediately remove from UI state without confirm popup
+    setCategories((prev) => prev.filter((c) => c.id !== id));
+
     try {
       await api.delete(`/categories/${id}`);
-      loadCategories();
     } catch (err: any) {
       alert(err.message || 'Failed to delete category');
+      loadCategories();
+      return;
     }
+
+    triggerUndoToast(`Product Category "${itemToDelete.name}" deleted`, async () => {
+      try {
+        await api.post('/categories', { name: itemToDelete.name });
+        loadCategories();
+      } catch (err: any) {
+        alert(err.message || 'Failed to restore category');
+      }
+    });
   }
 
   async function handleAddWarranty(e: React.FormEvent) {
@@ -223,13 +307,25 @@ export function SettingsPage() {
   }
 
   async function handleRemoveLogo() {
-    if (!confirm('Are you sure you want to remove the store logo?')) return;
+    const previousLogoUrl = settings?.logoUrl;
+    if (!previousLogoUrl) return;
+
     try {
       const updated = await api.patch<ShopSettings>('/settings', { logoUrl: null });
       dispatch(settingsUpdated(updated));
     } catch (err: any) {
       alert(err.message || 'Failed to remove logo');
+      return;
     }
+
+    triggerUndoToast('Store logo removed', async () => {
+      try {
+        const restored = await api.patch<ShopSettings>('/settings', { logoUrl: previousLogoUrl });
+        dispatch(settingsUpdated(restored));
+      } catch (err: any) {
+        alert(err.message || 'Failed to restore logo');
+      }
+    });
   }
 
   function handleSaveSettings() {
@@ -270,49 +366,50 @@ export function SettingsPage() {
         <div className="flex bg-canvas p-1 rounded-xl border border-border gap-1 text-xs font-semibold">
           <button
             onClick={() => setActiveTab('branding')}
-            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${
-              activeTab === 'branding' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
-            }`}
+            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${activeTab === 'branding' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
+              }`}
           >
             Store Branding
           </button>
           <button
             onClick={() => setActiveTab('hardware')}
-            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${
-              activeTab === 'hardware' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
-            }`}
+            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${activeTab === 'hardware' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
+              }`}
           >
             Hardware &amp; Employees
           </button>
           <button
             onClick={() => setActiveTab('defaults')}
-            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${
-              activeTab === 'defaults' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
-            }`}
+            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${activeTab === 'defaults' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
+              }`}
           >
             POS Defaults
           </button>
           <button
             onClick={() => setActiveTab('categories')}
-            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${
-              activeTab === 'categories' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
-            }`}
+            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${activeTab === 'categories' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
+              }`}
           >
-            Categories
+            Product Categories
+          </button>
+          <button
+            onClick={() => setActiveTab('customer-categories')}
+            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${activeTab === 'customer-categories' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
+              }`}
+          >
+            Customer Groups
           </button>
           <button
             onClick={() => setActiveTab('warranties')}
-            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${
-              activeTab === 'warranties' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
-            }`}
+            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${activeTab === 'warranties' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
+              }`}
           >
             Warranty Periods
           </button>
           <button
             onClick={() => setActiveTab('overdue')}
-            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${
-              activeTab === 'overdue' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
-            }`}
+            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${activeTab === 'overdue' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
+              }`}
           >
             Overdue Rules
           </button>
@@ -748,6 +845,77 @@ export function SettingsPage() {
         </div>
       )}
 
+      {/* Tab 4b: Customer Groups / Categories (Full Width) */}
+      {activeTab === 'customer-categories' && (
+        <div className="w-full rounded-2xl border border-border bg-surface p-6 shadow-xs space-y-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="font-bold text-base text-ink">Customer Classification Groups</h3>
+              <p className="text-xs text-muted">Manage dynamic categories and groups for customer classification and segmentation.</p>
+            </div>
+            <span className="text-xs bg-canvas border border-border px-3 py-1 rounded-full font-bold">
+              {customerCategories.length} Customer Groups
+            </span>
+          </div>
+
+          {/* Add Customer Category Form */}
+          <form onSubmit={handleAddCustomerCategory} className="flex gap-2 items-center">
+            <Input
+              required
+              placeholder="Group Name (e.g. VIP Buyers)..."
+              value={newCustCatName}
+              onChange={(e) => setNewCustCatName(e.target.value)}
+              className="flex-1 text-xs py-2"
+            />
+            <Input
+              placeholder="Badge (optional)"
+              value={newCustCatEmoji}
+              onChange={(e) => setNewCustCatEmoji(e.target.value)}
+              className="w-20 text-xs text-center py-2"
+            />
+            <input
+              type="color"
+              value={newCustCatColor}
+              onChange={(e) => setNewCustCatColor(e.target.value)}
+              className="w-10 h-8 rounded border border-border cursor-pointer p-0.5"
+              title="Pick Badge Color"
+            />
+            <Button type="submit" className="text-xs font-bold px-4">
+              + Add Group
+            </Button>
+          </form>
+
+          {/* Customer Categories List */}
+          <div className="max-h-[500px] overflow-y-auto rounded-xl border border-border divide-y divide-border bg-canvas">
+            {customerCategories.map((c) => (
+              <div key={c.id} className="p-3.5 flex justify-between items-center text-xs hover:bg-surface transition-colors">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="px-2.5 py-1 rounded-full text-xs font-bold border flex items-center gap-1"
+                    style={{
+                      borderColor: c.color || '#3B82F6',
+                      color: c.color || '#3B82F6',
+                      backgroundColor: `${c.color || '#3B82F6'}18`,
+                    }}
+                  >
+                    {c.emoji ? <span>{c.emoji}</span> : null}
+                    <span>{c.name}</span>
+                  </span>
+                  {c.description && <span className="text-muted text-[11px] ml-2">{c.description}</span>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteCustomerCategory(c.id)}
+                  className="text-rose-500 hover:text-rose-700 font-bold px-2 py-0.5 text-sm cursor-pointer"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Tab 5: Warranty Periods (Full Width) */}
       {activeTab === 'warranties' && (
         <div className="w-full rounded-2xl border border-border bg-surface p-6 shadow-xs space-y-4">
@@ -813,11 +981,10 @@ export function SettingsPage() {
                   <p className="font-bold text-ink">{act.description}</p>
                   <p className="text-[11px] text-muted mt-0.5">Triggers after {act.triggerDaysOverdue} days overdue</p>
                 </div>
-                <span className={`px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider ${
-                  act.actionType === 'BLOCK' ? 'bg-rose-500/10 text-rose-600 border border-rose-500/20' :
-                  act.actionType === 'SUSPEND' ? 'bg-amber-500/10 text-amber-600 border border-amber-500/20' :
-                  'bg-blue-500/10 text-blue-600 border border-blue-500/20'
-                }`}>
+                <span className={`px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider ${act.actionType === 'BLOCK' ? 'bg-rose-500/10 text-rose-600 border border-rose-500/20' :
+                    act.actionType === 'SUSPEND' ? 'bg-amber-500/10 text-amber-600 border border-amber-500/20' :
+                      'bg-blue-500/10 text-blue-600 border border-blue-500/20'
+                  }`}>
                   {act.actionType}
                 </span>
               </div>
@@ -827,6 +994,19 @@ export function SettingsPage() {
       )}
 
       {showAddEmployee ? <AddEmployeeModal onClose={() => setShowAddEmployee(false)} /> : null}
+
+      {/* 5-Second Undo Toast Component */}
+      {undoToast ? (
+        <UndoToast
+          message={undoToast.message}
+          onUndo={() => {
+            const callback = undoToast.onUndo;
+            setUndoToast(null);
+            callback();
+          }}
+          onExpire={() => setUndoToast(null)}
+        />
+      ) : null}
     </div>
   );
 }

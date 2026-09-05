@@ -16,6 +16,8 @@ import {
   SUPPLIER_TRANSACTION_TYPES,
   THEME_MODES,
   TRADE_IN_STATUSES,
+  CUSTOMER_SORT_FIELDS,
+  CUSTOMER_PAYMENT_STATUSES,
 } from './enums';
 
 const hexColor = z
@@ -170,9 +172,40 @@ export type PaymentCreateInput = z.infer<typeof paymentCreateSchema>;
 export const customerUpsertSchema = z.object({
   phone: z.string().min(7).max(20),
   name: z.string().max(120).nullable().optional(),
+  nic: z.string().max(30).nullable().optional(),
+  address: z.string().max(500).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  isBlocked: z.boolean().optional(),
+  isSuspended: z.boolean().optional(),
+  categoryIds: z.array(z.string()).optional(),
 });
 export type CustomerUpsertInput = z.infer<typeof customerUpsertSchema>;
+
+export const customerUpdateSchema = customerUpsertSchema.partial().extend({
+  phone: z.string().min(7).max(20).optional(),
+});
+export type CustomerUpdateInput = z.infer<typeof customerUpdateSchema>;
+
+export const customerCategorySchema = z.object({
+  name: z.string().min(1).max(80),
+  emoji: z.string().max(10).nullable().optional(),
+  color: hexColor.nullable().optional(),
+  description: z.string().max(255).nullable().optional(),
+  sortOrder: z.number().int().default(0),
+  isActive: z.boolean().default(true),
+});
+export type CustomerCategoryInput = z.infer<typeof customerCategorySchema>;
+
+export const customerListQuerySchema = z.object({
+  search: z.string().optional(),
+  categoryId: z.string().optional(),
+  paymentStatus: z.enum(CUSTOMER_PAYMENT_STATUSES).optional().default('ALL'),
+  sortBy: z.enum(CUSTOMER_SORT_FIELDS).optional().default('createdAt'),
+  sortDir: z.enum(['asc', 'desc']).optional().default('desc'),
+  page: z.number().int().positive().optional().default(1),
+  limit: z.number().int().positive().optional().default(20),
+});
+export type CustomerListQueryInput = z.infer<typeof customerListQuerySchema>;
 
 export const repairTicketCreateSchema = z.object({
   phone: z.string().min(7).max(20),
@@ -184,6 +217,8 @@ export const repairTicketCreateSchema = z.object({
   commissionValue: z.number().nonnegative().optional(),
   advancePayment: z.number().nonnegative().optional().default(0),
   warrantyPeriodId: z.string().nullable().optional(),
+  isThreeDayWarranty: z.boolean().optional().default(false),
+  warrantySaleId: z.string().nullable().optional(),
 });
 export type RepairTicketCreateInput = z.infer<typeof repairTicketCreateSchema>;
 
@@ -196,6 +231,8 @@ export const repairTicketUpdateSchema = z.object({
   commissionValue: z.number().nonnegative().optional(),
   advancePayment: z.number().nonnegative().optional(),
   warrantyPeriodId: z.string().nullable().optional(),
+  isThreeDayWarranty: z.boolean().optional(),
+  warrantySaleId: z.string().nullable().optional(),
 });
 export type RepairTicketUpdateInput = z.infer<typeof repairTicketUpdateSchema>;
 

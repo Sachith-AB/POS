@@ -14,6 +14,7 @@ const RepairsPage = lazy(() => import('./pages/RepairsPage').then((m) => ({ defa
 const InstallmentsPage = lazy(() => import('./pages/InstallmentsPage').then((m) => ({ default: m.InstallmentsPage })));
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const CustomersPage = lazy(() => import('./pages/CustomersPage').then((m) => ({ default: m.CustomersPage })));
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { employee, status } = useAppSelector((s) => s.auth);
@@ -66,6 +67,14 @@ export default function App() {
             element={
               <RequireAuth>
                 <StockPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/customers"
+            element={
+              <RequireAuth>
+                <CustomersPage />
               </RequireAuth>
             }
           />

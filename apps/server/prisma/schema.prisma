@@ -192,18 +192,53 @@ model Customer {
   id          String   @id @default(cuid())
   phone       String   @unique
   name        String?
+  nic         String?  @unique
+  address     String?
   notes       String?
   isBlocked   Boolean  @default(false)
   isSuspended Boolean  @default(false)
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   sales         Sale[]
   repairTickets RepairTicket[]
   tradeIns      TradeIn[]
+  categories    CustomerCategoryAssignment[]
 
   @@index([phone])
+  @@index([nic])
   @@map("customers")
 }
+
+model CustomerCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  emoji       String?
+  color       String?
+  description String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  assignments CustomerCategoryAssignment[]
+
+  @@map("customer_categories")
+}
+
+model CustomerCategoryAssignment {
+  id          String   @id @default(cuid())
+  customerId  String
+  categoryId  String
+  assignedAt  DateTime @default(now())
+
+  customer Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  category CustomerCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, categoryId])
+  @@map("customer_category_assignments")
+}
+
 
 model Category {
   id          String    @id @default(cuid())
@@ -501,6 +536,8 @@ model RepairTicket {
   advancePayment    Decimal           @default(0) @db.Decimal(12, 2)
   warrantyPeriodId  String?
   warrantyExpiresAt DateTime?
+  isThreeDayWarranty Boolean           @default(false)
+  warrantySaleId    String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -512,6 +549,7 @@ model RepairTicket {
   @@index([status])
   @@index([createdAt])
   @@index([technicianId])
+  @@index([isThreeDayWarranty])
   @@map("repair_tickets")
 }
 

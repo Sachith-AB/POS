@@ -7,6 +7,7 @@ import stockSaga from '../features/stock/stockSaga';
 import repairsSaga from '../features/repairs/repairsSaga';
 import installmentsSaga from '../features/installments/installmentsSaga';
 import dashboardSaga from '../features/dashboard/dashboardSaga';
+import customersSaga from '../features/customers/customersSaga';
 
 export default function* rootSaga() {
   yield all([
@@ -18,6 +19,7 @@ export default function* rootSaga() {
     fork(repairsSaga),
     fork(installmentsSaga),
     fork(dashboardSaga),
+    fork(customersSaga),
   ]);
 }
 
