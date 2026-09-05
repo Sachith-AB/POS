@@ -1,0 +1,36 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.kzeromobile.pos",
+  "productName": "K ZERO MOBILE POS",
+  "copyright": "Copyright © 2026 K ZERO MOBILE",
+  "directories": {
+    "output": "release/1.0.0",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist-electron/**/*",
+    "apps/web/dist/**/*",
+    "apps/server/dist/**/*",
+    "apps/server/node_modules/**/*",
+    "apps/server/prisma/**/*",
+    "apps/server/package.json",
+    "packages/shared/dist/**/*",
+    "packages/shared/package.json",
+    "package.json"
+  ],
+  "asar": true,
+  "cscLink": null,
+  "win": {
+    "target": [
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ],
+    "sign": "electron/sign.js",
+    "verifyUpdateCodeSignature": false
+  },
+  "publish": {
+    "provider": "github"
+  }
+}

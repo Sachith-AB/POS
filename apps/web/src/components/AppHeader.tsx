@@ -17,11 +17,12 @@ export function AppHeader() {
   return (
     <header className="relative flex flex-col sm:flex-row sm:items-center gap-3 border-b border-border bg-surface px-4 py-2.5 z-50">
       <div className="flex items-center justify-between w-full sm:w-auto">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {settings?.logoUrl ? (
             <img className="h-8 w-8 rounded object-contain" src={`http://localhost:4000${settings.logoUrl}`} alt="" />
           ) : null}
           <span className="text-base font-bold">{settings?.companyName ?? 'POS'}</span>
+          <span className="text-[10px] font-mono text-muted bg-canvas border border-border px-1.5 py-0.5 rounded font-semibold">v1.0.0</span>
         </div>
         {employee ? (
           <button

@@ -32,9 +32,15 @@ export function useThemeSync() {
       (document.querySelector("link[rel*='icon']") as HTMLLinkElement);
     if (fav) {
       if (settings.logoUrl) {
-        fav.href = settings.logoUrl.startsWith('http')
+        const fullLogoUrl = settings.logoUrl.startsWith('http')
           ? settings.logoUrl
           : `http://localhost:4000${settings.logoUrl}`;
+        fav.href = fullLogoUrl;
+
+        // Sync Desktop Electron Window & Taskbar Icon with company logo
+        if ((window as any).electronApp?.setWindowIcon) {
+          (window as any).electronApp.setWindowIcon(fullLogoUrl);
+        }
       } else {
         fav.href = '/favicon.svg';
       }

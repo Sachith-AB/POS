@@ -12,7 +12,17 @@ const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
 const uploadsDir = process.env.UPLOADS_DIR ?? './uploads';
 
-app.use(cors({ origin: process.env.CORS_ORIGIN ?? 'http://localhost:5173', credentials: true }));
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin or file:// protocol (packaged Electron app) or localhost
+    if (!origin || origin === 'null' || origin.startsWith('file://') || origin.includes('localhost')) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(cookieParser());
 app.use('/uploads', express.static(path.resolve(uploadsDir)));

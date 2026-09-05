@@ -359,7 +359,10 @@ export function SettingsPage() {
       {/* Header & Tab Selector */}
       <div className="flex items-center justify-between border-b border-border bg-surface p-4 rounded-2xl shadow-xs">
         <div>
-          <h2 className="text-lg font-bold text-ink">System Settings</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-ink">System Settings</h2>
+            <span className="bg-primary/10 text-primary border border-primary/20 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full">v1.0.0</span>
+          </div>
           <p className="text-xs text-muted">Store branding, hardware setup, defaults, product categories, and warranty terms</p>
         </div>
 

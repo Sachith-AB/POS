@@ -1,24 +1,39 @@
 {
   "name": "pos-system",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "description": "K ZERO MOBILE POS System",
+  "author": "K ZERO MOBILE",
+  "main": "dist-electron/main.js",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=apps/server & npm run dev --workspace=apps/web",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
     "dev:server": "npm run dev --workspace=apps/server",
     "dev:web": "npm run dev --workspace=apps/web",
-    "build": "npm run build --workspace=packages/shared && npm run build --workspace=apps/server && npm run build --workspace=apps/web",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "electron:dev": "concurrently \"npm run dev\" \"npm run build:electron && wait-on http://localhost:5173 && electron .\"",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=apps/server && npm run build --workspace=apps/web && npm run build:electron",
+    "electron:build": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder --win",
     "test": "npm run test --workspaces --if-present",
     "prisma:generate": "npm run prisma:generate --workspace=apps/server",
     "prisma:migrate": "npm run prisma:migrate --workspace=apps/server",
     "seed": "npm run seed --workspace=apps/server",
     "postinstall": "npm run prisma:generate"
   },
+  "dependencies": {
+    "electron-updater": "^6.2.1"
+  },
   "devDependencies": {
-    "typescript": "^5.5.4"
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3",
+    "tsx": "^4.16.5",
+    "typescript": "^5.5.4",
+    "wait-on": "^7.2.0"
   },
   "engines": {
     "node": ">=18"
