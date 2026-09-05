@@ -70,6 +70,40 @@ export async function getRepairTicket(id: string) {
   return ticket;
 }
 
+export async function checkRecentCustomerSale(phone: string) {
+  const settings = await getSettings();
+  const firstDaysRule = settings?.firstDaysWarrantyDays ?? 3;
+
+  const customer = await prisma.customer.findUnique({
+    where: { phone },
+  });
+
+  if (!customer) {
+    return { hasRecentSale: false, firstDaysRule };
+  }
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - firstDaysRule);
+
+  const recentSale = await prisma.sale.findFirst({
+    where: {
+      customerId: customer.id,
+      status: 'COMPLETED',
+      createdAt: { gte: cutoff },
+    },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      items: { include: { product: true } },
+    },
+  });
+
+  return {
+    hasRecentSale: !!recentSale,
+    sale: recentSale,
+    firstDaysRule,
+  };
+}
+
 export async function createRepairTicket(input: RepairTicketCreateInput, employeeId: string) {
   // Upsert customer by phone
   let customer = await prisma.customer.findUnique({ where: { phone: input.phone } });
@@ -85,6 +119,16 @@ export async function createRepairTicket(input: RepairTicketCreateInput, employe
       where: { id: customer.id },
       data: { name: input.customerName },
     });
+  }
+
+  // Check 3-day warranty support rule (Q4)
+  const recentSaleCheck = await checkRecentCustomerSale(input.phone);
+  let isThreeDayWarranty = input.isThreeDayWarranty ?? false;
+  let warrantySaleId = input.warrantySaleId || null;
+
+  if (input.isThreeDayWarranty === undefined && recentSaleCheck.hasRecentSale) {
+    isThreeDayWarranty = true;
+    warrantySaleId = recentSaleCheck.sale?.id || null;
   }
 
   // Fetch shop settings for defaults (Q24 default technician, commission)
@@ -121,6 +165,8 @@ export async function createRepairTicket(input: RepairTicketCreateInput, employe
       advancePayment: input.advancePayment || 0,
       warrantyPeriodId: input.warrantyPeriodId || null,
       warrantyExpiresAt,
+      isThreeDayWarranty,
+      warrantySaleId,
     },
     include: {
       customer: true,
@@ -155,6 +201,8 @@ export async function updateRepairTicket(
   if (input.technicianId !== undefined) data.technicianId = input.technicianId || null;
   if (input.commissionMethod !== undefined) data.commissionMethod = input.commissionMethod;
   if (input.commissionValue !== undefined) data.commissionValue = input.commissionValue;
+  if (input.isThreeDayWarranty !== undefined) data.isThreeDayWarranty = input.isThreeDayWarranty;
+  if (input.warrantySaleId !== undefined) data.warrantySaleId = input.warrantySaleId;
 
   // Calculate commission amount if estimate and commission are present (Q24)
   const est = Number(input.estimate ?? ticket.estimate ?? 0);
@@ -265,5 +313,91 @@ export async function updateRepairTicket(
   }
 
   return updated;
+}
+
+/**
+ * Q25: List uncollected repairs sorted by uncollected days (overdue first)
+ */
+export async function listUncollectedRepairTickets() {
+  const settings = await getSettings();
+  const thresholdDays = settings.uncollectedRepairDays ?? 30;
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - thresholdDays);
+
+  const tickets = await prisma.repairTicket.findMany({
+    where: {
+      status: 'REPAIRED',
+      updatedAt: { lte: cutoff },
+    },
+    include: {
+      customer: true,
+      technician: true,
+    },
+    orderBy: { updatedAt: 'asc' }, // oldest first = highest uncollected days first
+  });
+
+  const now = new Date();
+  const items = tickets.map((t) => {
+    const uncollectedDays = Math.floor(
+      (now.getTime() - new Date(t.updatedAt).getTime()) / (1000 * 60 * 60 * 24)
+    );
+    return {
+      ...t,
+      uncollectedDays,
+    };
+  });
+
+  return {
+    thresholdDays,
+    total: items.length,
+    items,
+  };
+}
+
+/**
+ * Q25: Send SMS reminders to uncollected repair customers
+ */
+export async function sendUncollectedSmsReminders(ticketIds?: string[]) {
+  const settings = await getSettings();
+  const thresholdDays = settings.uncollectedRepairDays ?? 30;
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - thresholdDays);
+
+  const where: any = {
+    status: 'REPAIRED',
+    updatedAt: { lte: cutoff },
+  };
+
+  if (ticketIds && ticketIds.length > 0) {
+    where.id = { in: ticketIds };
+  }
+
+  const tickets = await prisma.repairTicket.findMany({
+    where,
+    include: { customer: true },
+  });
+
+  let sentCount = 0;
+  const errors: string[] = [];
+
+  for (const ticket of tickets) {
+    const daysReady = Math.floor(
+      (Date.now() - new Date(ticket.updatedAt).getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    const message = `Reminder: Your repaired device (${ticket.deviceInfo}) has been ready for collection for ${daysReady} days. Ticket: ${ticket.ticketNumber}. Please collect it from K Zero Mobile.`;
+
+    try {
+      await sendSms(ticket.customer.phone, message);
+      sentCount++;
+    } catch (err: any) {
+      console.error(`Failed to send uncollected SMS for ticket ${ticket.ticketNumber}:`, err);
+      errors.push(`${ticket.ticketNumber}: ${err.message || 'SMS failed'}`);
+    }
+  }
+
+  return { sentCount, total: tickets.length, errors };
 }
 

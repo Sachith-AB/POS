@@ -52,6 +52,9 @@ export function AppHeader() {
           <NavLink to="/stock" className={linkClass} onClick={() => setIsOpen(false)}>
             Stock
           </NavLink>
+          <NavLink to="/customers" className={linkClass} onClick={() => setIsOpen(false)}>
+            Customers
+          </NavLink>
           {employee.role === 'OWNER' ? (
             <>
               <NavLink to="/dashboard" className={linkClass} onClick={() => setIsOpen(false)}>

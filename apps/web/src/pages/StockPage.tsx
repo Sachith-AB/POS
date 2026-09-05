@@ -683,7 +683,7 @@ function ReceiveStockPanel() {
 
         {lastBatchCount ? (
           <p className="text-center text-xs text-emerald-600 font-medium mt-2">
-            ✓ Successfully received {lastBatchCount} items into stock!
+            Successfully received {lastBatchCount} items into stock!
           </p>
         ) : null}
       </div>

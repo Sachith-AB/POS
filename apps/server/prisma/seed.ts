@@ -102,6 +102,28 @@ async function main() {
   }
   console.log('Seeded default overdue actions.');
 
+  // Seed Default Customer Categories
+  const defaultCustomerCategories = [
+    { name: 'Best Customers', emoji: null, color: '#FFD700', description: 'Top purchasing high-value customers', sortOrder: 1 },
+    { name: 'Good Customers', emoji: null, color: '#22C55E', description: 'Reliable buyers with smooth history', sortOrder: 2 },
+    { name: 'Normal Customers', emoji: null, color: '#EAB308', description: 'Standard walk-in buyers', sortOrder: 3 },
+    { name: 'Follow-up Required', emoji: null, color: '#F97316', description: 'Customers needing payment or service check', sortOrder: 4 },
+    { name: 'Problem / Risk', emoji: null, color: '#EF4444', description: 'Customers with overdue or payment issues', sortOrder: 5 },
+    { name: 'Blocked Customers', emoji: null, color: '#6B7280', description: 'Blocked or suspended customers', sortOrder: 6 },
+    { name: 'Installment Customers', emoji: null, color: '#3B82F6', description: 'Active or past installment credit buyers', sortOrder: 7 },
+    { name: 'Repair Customers', emoji: null, color: '#8B5CF6', description: 'Customers who bring devices for repair', sortOrder: 8 },
+    { name: 'Regular Buyers', emoji: null, color: '#06B6D4', description: 'Frequent repeat shop buyers', sortOrder: 9 },
+  ];
+
+  for (const cc of defaultCustomerCategories) {
+    await prisma.customerCategory.upsert({
+      where: { name: cc.name },
+      create: cc,
+      update: cc,
+    });
+  }
+  console.log('Seeded default customer categories.');
+
   const sampleProducts: Array<{
     sku: string;
     barcode: string;

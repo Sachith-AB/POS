@@ -8,6 +8,7 @@ import stockReducer from '../features/stock/stockSlice';
 import repairsReducer from '../features/repairs/repairsSlice';
 import installmentsReducer from '../features/installments/installmentsSlice';
 import dashboardReducer from '../features/dashboard/dashboardSlice';
+import customersReducer from '../features/customers/customersSlice';
 import rootSaga from './rootSaga';
 
 const sagaMiddleware = createSagaMiddleware();
@@ -22,6 +23,7 @@ export const store = configureStore({
     repairs: repairsReducer,
     installments: installmentsReducer,
     dashboard: dashboardReducer,
+    customers: customersReducer,
   },
 
   middleware: (getDefaultMiddleware) => getDefaultMiddleware({ thunk: false }).concat(sagaMiddleware),

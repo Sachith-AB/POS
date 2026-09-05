@@ -50,7 +50,7 @@ export function A5RepairBill({ ticket }: A5RepairBillProps) {
           <div>
             <p><strong>Device:</strong> {ticket.deviceInfo}</p>
             <p><strong>Status:</strong> {ticket.status}</p>
-            <p><strong>Warranty:</strong> {ticket.warrantyExpiresAt ? `${new Date(ticket.warrantyExpiresAt).toLocaleDateString()}` : '3-Day Return Support'}</p>
+            <p><strong>Warranty:</strong> {ticket.isThreeDayWarranty ? '3-Day Warranty (No Charge Repair)' : ticket.warrantyExpiresAt ? `${new Date(ticket.warrantyExpiresAt).toLocaleDateString()}` : 'Standard Return Support'}</p>
           </div>
         </div>
 
@@ -112,7 +112,7 @@ export function A5RepairBill({ ticket }: A5RepairBillProps) {
         {/* Perforation Divider */}
         <div className="flex items-center gap-2 text-[9px] text-gray-500 py-1">
           <div className="flex-1 border-b-2 border-dashed border-gray-400" />
-          <span className="font-mono uppercase tracking-widest text-[8px]">✂ CUT HERE - BILL BOOK PERFORATION ✂</span>
+          <span className="font-mono uppercase tracking-widest text-[8px]">--- CUT HERE - BILL BOOK PERFORATION ---</span>
           <div className="flex-1 border-b-2 border-dashed border-gray-400" />
         </div>
 

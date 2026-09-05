@@ -71,3 +71,23 @@ export type BarcodeScannerMode = (typeof BARCODE_SCANNER_MODES)[number];
 export const RECEIPT_WIDTHS = ['58mm', '80mm'] as const;
 export type ReceiptWidth = (typeof RECEIPT_WIDTHS)[number];
 
+export const CUSTOMER_SORT_FIELDS = [
+  'name',
+  'totalPurchases',
+  'totalPurchaseValue',
+  'lastTransactionDate',
+  'outstandingAmount',
+  'createdAt',
+] as const;
+export type CustomerSortField = (typeof CUSTOMER_SORT_FIELDS)[number];
+
+export const CUSTOMER_PAYMENT_STATUSES = [
+  'ALL',
+  'PAID_UP',
+  'HAS_OUTSTANDING',
+  'OVERDUE',
+  'BLOCKED',
+] as const;
+export type CustomerPaymentStatus = (typeof CUSTOMER_PAYMENT_STATUSES)[number];
+
+

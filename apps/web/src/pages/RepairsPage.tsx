@@ -10,6 +10,10 @@ import {
   photoUploadRequested,
   photoDeleteRequested,
   clearSelectedTicket,
+  recentSaleCheckRequested,
+  clearRecentSaleCheck,
+  uncollectedTicketsRequested,
+  sendUncollectedSmsRequested,
 } from '../features/repairs/repairsSlice';
 import { PhotoCapture } from '../components/PhotoCapture';
 import { Button } from '../components/Button';
@@ -49,11 +53,26 @@ interface InventoryProduct {
 
 export function RepairsPage() {
   const dispatch = useAppDispatch();
-  const { items, total, page, pages, selectedTicket, loading, saving, error, filters } =
-    useAppSelector((s) => s.repairs);
+  const {
+    items,
+    total,
+    page,
+    pages,
+    selectedTicket,
+    loading,
+    saving,
+    error,
+    filters,
+    recentSaleCheck,
+    uncollectedTickets,
+    uncollectedTotal,
+    uncollectedThresholdDays,
+    uncollectedLoading,
+    sendingSms,
+  } = useAppSelector((s) => s.repairs);
   const settings = useAppSelector((s) => s.settings.data);
 
-  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'uncollected'>('table');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showPhotoCapture, setShowPhotoCapture] = useState(false);
   const [showOutsourceModal, setShowOutsourceModal] = useState(false);
@@ -71,6 +90,7 @@ export function RepairsPage() {
   const [technicianId, setTechnicianId] = useState('');
   const [advancePayment, setAdvancePayment] = useState('');
   const [warrantyPeriodId, setWarrantyPeriodId] = useState('');
+  const [isThreeDayWarranty, setIsThreeDayWarranty] = useState(false);
   const [commissionMethod, setCommissionMethod] = useState<'PERCENTAGE' | 'FIXED_AMOUNT'>('PERCENTAGE');
   const [commissionValue, setCommissionValue] = useState('0');
 
@@ -96,18 +116,42 @@ export function RepairsPage() {
     // Load technicians
     api.get<TechnicianItem[]>('/employees').then((res) => {
       setTechnicians(res || []);
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Load repair warranties
     api.get<WarrantyOption[]>('/warranties?repairs=true').then((res) => {
       setWarranties(res || []);
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Load spare products
     api.get<InventoryProduct[]>('/products').then((res) => {
       setInventoryProducts(res || []);
-    }).catch(() => {});
+    }).catch(() => { });
   }, [dispatch]);
+
+  // Load uncollected tickets when switching viewMode to uncollected
+  useEffect(() => {
+    if (viewMode === 'uncollected') {
+      dispatch(uncollectedTicketsRequested());
+    }
+  }, [viewMode, dispatch]);
+
+  // Check recent sale when phone number changes in create modal
+  useEffect(() => {
+    if (showCreateModal && phone.trim().length >= 7) {
+      dispatch(recentSaleCheckRequested(phone.trim()));
+    } else if (!phone.trim()) {
+      dispatch(clearRecentSaleCheck());
+      setIsThreeDayWarranty(false);
+    }
+  }, [phone, showCreateModal, dispatch]);
+
+  // Auto-check 3-day warranty if recent sale found
+  useEffect(() => {
+    if (recentSaleCheck.hasRecentSale) {
+      setIsThreeDayWarranty(true);
+    }
+  }, [recentSaleCheck.hasRecentSale]);
 
   // Load estimate and parts when ticket selection changes
   useEffect(() => {
@@ -162,6 +206,8 @@ export function RepairsPage() {
         warrantyPeriodId: warrantyPeriodId || undefined,
         commissionMethod,
         commissionValue: parseFloat(commissionValue) || 0,
+        isThreeDayWarranty,
+        warrantySaleId: recentSaleCheck.sale?.id || undefined,
       })
     );
 
@@ -171,6 +217,8 @@ export function RepairsPage() {
     setDeviceInfo('');
     setIssue('');
     setAdvancePayment('');
+    setIsThreeDayWarranty(false);
+    dispatch(clearRecentSaleCheck());
     setShowCreateModal(false);
   }
 
@@ -281,23 +329,33 @@ export function RepairsPage() {
           <p className="text-xs text-muted">A5 Bill Book, spare parts deduction, technician commissions, and outsourced repairs</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Table / Kanban view toggle */}
+          {/* Table / Kanban / Uncollected view toggle */}
           <div className="flex rounded-lg border border-border bg-canvas p-0.5">
             <button
               onClick={() => setViewMode('table')}
-              className={`rounded-md px-2.5 py-1 text-xs font-semibold cursor-pointer ${
-                viewMode === 'table' ? 'bg-surface text-ink shadow-xs' : 'text-muted'
-              }`}
+              className={`rounded-md px-2.5 py-1 text-xs font-semibold cursor-pointer ${viewMode === 'table' ? 'bg-surface text-ink shadow-xs' : 'text-muted'
+                }`}
             >
               List
             </button>
             <button
               onClick={() => setViewMode('kanban')}
-              className={`rounded-md px-2.5 py-1 text-xs font-semibold cursor-pointer ${
-                viewMode === 'kanban' ? 'bg-surface text-ink shadow-xs' : 'text-muted'
-              }`}
+              className={`rounded-md px-2.5 py-1 text-xs font-semibold cursor-pointer ${viewMode === 'kanban' ? 'bg-surface text-ink shadow-xs' : 'text-muted'
+                }`}
             >
               Board
+            </button>
+            <button
+              onClick={() => setViewMode('uncollected')}
+              className={`rounded-md px-2.5 py-1 text-xs font-semibold cursor-pointer flex items-center gap-1.5 ${viewMode === 'uncollected' ? 'bg-amber-500/10 text-amber-500 font-bold border border-amber-500/20' : 'text-muted'
+                }`}
+            >
+              <span>Uncollected (&gt;30 Days)</span>
+              {uncollectedTotal > 0 ? (
+                <span className="rounded-full bg-amber-500 text-white px-1.5 py-0.2 text-[9px] font-bold">
+                  {uncollectedTotal}
+                </span>
+              ) : null}
             </button>
           </div>
 
@@ -372,12 +430,16 @@ export function RepairsPage() {
                         <tr
                           key={item.id}
                           onClick={() => dispatch(ticketDetailRequested(item.id))}
-                          className={`cursor-pointer hover:bg-canvas transition-colors ${
-                            selectedTicket?.id === item.id ? 'bg-canvas font-semibold' : ''
-                          }`}
+                          className={`cursor-pointer hover:bg-canvas transition-colors ${selectedTicket?.id === item.id ? 'bg-canvas font-semibold' : ''
+                            }`}
                         >
-                          <td className="px-3.5 py-3 font-mono font-bold text-primary">
-                            {item.ticketNumber}
+                          <td className="px-3.5 py-3 font-mono">
+                            <div className="font-bold text-primary">{item.ticketNumber}</div>
+                            {item.isThreeDayWarranty ? (
+                              <span className="inline-block mt-0.5 rounded bg-amber-500/10 px-1.5 py-0.2 text-[9px] font-bold text-amber-500 border border-amber-500/20">
+                                3-Day Claim
+                              </span>
+                            ) : null}
                           </td>
                           <td className="px-3.5 py-3 max-w-[160px]">
                             <div className="font-semibold truncate">{item.deviceInfo}</div>
@@ -397,9 +459,8 @@ export function RepairsPage() {
                           </td>
                           <td className="px-3.5 py-3">
                             <span
-                              className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
-                                STATUS_COLORS[item.status] || ''
-                              }`}
+                              className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${STATUS_COLORS[item.status] || ''
+                                }`}
                             >
                               {item.status.replace('_', ' ')}
                             </span>
@@ -414,7 +475,7 @@ export function RepairsPage() {
                 </tbody>
               </table>
             </div>
-          ) : (
+          ) : viewMode === 'kanban' ? (
             /* Kanban Board View */
             <div className="flex-1 overflow-x-auto min-h-0 flex gap-3 p-1">
               {REPAIR_STATUSES.map((colStatus) => {
@@ -437,9 +498,8 @@ export function RepairsPage() {
                         <div
                           key={item.id}
                           onClick={() => dispatch(ticketDetailRequested(item.id))}
-                          className={`rounded-xl border border-border bg-surface p-2.5 cursor-pointer hover:shadow-xs transition-all ${
-                            selectedTicket?.id === item.id ? 'border-primary shadow-xs bg-primary/5' : ''
-                          }`}
+                          className={`rounded-xl border border-border bg-surface p-2.5 cursor-pointer hover:shadow-xs transition-all ${selectedTicket?.id === item.id ? 'border-primary shadow-xs bg-primary/5' : ''
+                            }`}
                         >
                           <div className="flex justify-between items-start">
                             <span className="font-bold text-xs font-mono text-primary">{item.ticketNumber}</span>
@@ -450,7 +510,7 @@ export function RepairsPage() {
                           <div className="text-xs font-semibold text-ink mt-1 truncate">{item.deviceInfo}</div>
                           <div className="text-[10px] text-muted mt-0.5 line-clamp-2">{item.issue}</div>
                           <div className="flex justify-between items-center mt-2 pt-1.5 border-t border-border/50 text-[10px]">
-                            <span className="text-muted truncate">📞 {item.customer?.phone}</span>
+                            <span className="text-muted truncate">{item.customer?.phone}</span>
                             {item.estimate ? (
                               <span className="font-mono font-bold text-ink">
                                 Rs {Number(item.estimate).toFixed(0)}
@@ -463,6 +523,97 @@ export function RepairsPage() {
                   </div>
                 );
               })}
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col min-h-0 space-y-3">
+              {/* Uncollected Header Banner */}
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-bold text-amber-500">Uncollected Repairs ({uncollectedTotal})</span>
+                    <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-600">
+                      Overdue &gt; {uncollectedThresholdDays} Days
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted mt-0.5">
+                    Repairs completed and ready for pickup for over {uncollectedThresholdDays} days. Send SMS reminders to prompt customer pickup.
+                  </p>
+                </div>
+                <Button
+                  disabled={uncollectedTickets.length === 0 || sendingSms}
+                  onClick={() => dispatch(sendUncollectedSmsRequested(undefined))}
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3.5 py-2 shrink-0 cursor-pointer"
+                >
+                  {sendingSms ? 'Sending SMS...' : `Send Bulk SMS to All (${uncollectedTotal})`}
+                </Button>
+              </div>
+
+              {/* Uncollected Table */}
+              <div className="flex-1 overflow-y-auto rounded-xl border border-border bg-surface">
+                <table className="w-full border-collapse text-left text-xs text-ink">
+                  <thead>
+                    <tr className="border-b border-border bg-canvas text-xs font-bold text-muted uppercase">
+                      <th className="px-3.5 py-2.5">Ticket #</th>
+                      <th className="px-3.5 py-2.5">Customer &amp; Phone</th>
+                      <th className="px-3.5 py-2.5">Device</th>
+                      <th className="px-3.5 py-2.5">Ready Since</th>
+                      <th className="px-3.5 py-2.5">Uncollected Days</th>
+                      <th className="px-3.5 py-2.5">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {uncollectedLoading ? (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                          Loading uncollected repairs...
+                        </td>
+                      </tr>
+                    ) : uncollectedTickets.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                          No uncollected repairs past {uncollectedThresholdDays} days!
+                        </td>
+                      </tr>
+                    ) : (
+                      uncollectedTickets.map((item) => (
+                        <tr
+                          key={item.id}
+                          onClick={() => dispatch(ticketDetailRequested(item.id))}
+                          className={`cursor-pointer hover:bg-canvas transition-colors ${selectedTicket?.id === item.id ? 'bg-canvas font-semibold' : ''
+                            }`}
+                        >
+                          <td className="px-3.5 py-3 font-mono font-bold text-primary">
+                            {item.ticketNumber}
+                          </td>
+                          <td className="px-3.5 py-3">
+                            <div className="font-semibold">{item.customer?.name || 'Walk-in'}</div>
+                            <div className="text-[10px] font-mono text-muted">{item.customer?.phone}</div>
+                          </td>
+                          <td className="px-3.5 py-3 font-medium">{item.deviceInfo}</td>
+                          <td className="px-3.5 py-3 text-muted text-[11px]">
+                            {new Date(item.updatedAt).toLocaleDateString()}
+                          </td>
+                          <td className="px-3.5 py-3 font-mono">
+                            <span className="inline-flex items-center rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-bold text-rose-500 border border-rose-500/20">
+                              {item.uncollectedDays} Days Overdue
+                            </span>
+                          </td>
+                          <td className="px-3.5 py-3" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              disabled={sendingSms}
+                              onClick={() => dispatch(sendUncollectedSmsRequested([item.id]))}
+                              variant="secondary"
+                              className="text-[11px] py-1 px-2.5 font-semibold cursor-pointer"
+                            >
+                              Send SMS Reminder
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -507,10 +658,14 @@ export function RepairsPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5">
+                  {selectedTicket.isThreeDayWarranty ? (
+                    <span className="rounded bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-500 border border-amber-500/20">
+                      3-Day Warranty Claim
+                    </span>
+                  ) : null}
                   <span
-                    className={`rounded-full border px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-                      STATUS_COLORS[selectedTicket.status] || ''
-                    }`}
+                    className={`rounded-full border px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${STATUS_COLORS[selectedTicket.status] || ''
+                      }`}
                   >
                     {selectedTicket.status.replace('_', ' ')}
                   </span>
@@ -541,7 +696,7 @@ export function RepairsPage() {
                   <span className="font-semibold text-ink">
                     {selectedTicket.customer?.name || 'Walk-in Customer'}
                   </span>
-                  <span className="font-mono text-muted">📞 {selectedTicket.customer?.phone}</span>
+                  <span className="font-mono text-muted">Phone: {selectedTicket.customer?.phone}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold uppercase text-muted block">Device</span>
@@ -809,7 +964,7 @@ export function RepairsPage() {
             </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center text-center p-4">
-              <span className="text-3xl text-muted block mb-2">🔧</span>
+              <FiTool className="text-3xl text-muted block mb-2 mx-auto" />
               <h3 className="text-sm font-semibold text-ink">No Ticket Selected</h3>
               <p className="text-xs text-muted max-w-[200px] mt-1">
                 Select a repair ticket from the list or intake a new device to get started.
@@ -850,6 +1005,23 @@ export function RepairsPage() {
                   />
                 </div>
               </div>
+
+              {/* Q4 3-Day Warranty Recent Purchase Alert Banner */}
+              {recentSaleCheck.loading ? (
+                <p className="text-[10px] text-muted italic">Checking purchase history for 3-day warranty...</p>
+              ) : recentSaleCheck.hasRecentSale ? (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-500 font-medium space-y-1">
+                  <div className="flex items-center gap-1 font-bold">
+                    <span>Recent Purchase Found!</span>
+                    <span className="text-[10px] bg-amber-500/20 px-1.5 py-0.5 rounded font-mono">
+                      Within {recentSaleCheck.firstDaysRule ?? 3} Days
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-600 leading-tight">
+                    Customer purchased item on {new Date(recentSaleCheck.sale?.createdAt).toLocaleDateString()}. Auto-flagged as 3-Day Warranty Claim (No Charge Support Repair).
+                  </p>
+                </div>
+              ) : null}
 
               <div>
                 <label className="text-[10px] font-semibold text-muted block mb-0.5">
@@ -944,6 +1116,22 @@ export function RepairsPage() {
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Q4 3-Day Support Warranty Claim Checkbox */}
+              <div className="rounded-lg border border-border bg-canvas p-2.5 space-y-1">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-ink">
+                  <input
+                    type="checkbox"
+                    checked={isThreeDayWarranty}
+                    onChange={(e) => setIsThreeDayWarranty(e.target.checked)}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+                  />
+                  <span>3-Day Support Warranty Claim (No Charge Repair)</span>
+                </label>
+                <p className="text-[10px] text-muted pl-6">
+                  Flag this repair ticket under the First 3-Day Return Support Rule for zero/free repair charge.
+                </p>
               </div>
 
               <div className="flex justify-end gap-2 border-t border-border pt-3">

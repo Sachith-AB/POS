@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { FiImage } from 'react-icons/fi';
 
 interface PhotoCaptureProps {
   onCapture: (file: File) => void;
@@ -161,7 +162,7 @@ export function PhotoCapture({ onCapture, onCancel }: PhotoCaptureProps) {
             onClick={() => fileInputRef.current?.click()}
             className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-2 p-4 text-center hover:bg-surface-hover"
           >
-            <span className="text-2xl text-muted">📁</span>
+            <FiImage className="text-2xl text-muted" />
             <span className="text-sm font-medium text-ink">Click or drop to select image</span>
             <span className="text-xs text-muted">Supports JPEG, PNG</span>
             <input

@@ -11,6 +11,9 @@ import {
   getRepairTicket,
   listRepairTickets,
   updateRepairTicket,
+  checkRecentCustomerSale,
+  listUncollectedRepairTickets,
+  sendUncollectedSmsReminders,
 } from '../services/repairService.js';
 import { prisma } from '../lib/prisma.js';
 
@@ -39,6 +42,39 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
 });
+
+// Check if customer phone has a sale within 3 days (Q4)
+router.get(
+  '/recent-sale-check',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const phone = req.query.phone as string;
+    if (!phone) return res.status(400).json({ error: 'Phone parameter required' });
+    const result = await checkRecentCustomerSale(phone);
+    res.json(result);
+  })
+);
+
+// Get uncollected repairs list sorted by uncollected days (Q25)
+router.get(
+  '/uncollected',
+  requireAuth,
+  asyncHandler(async (_req, res) => {
+    const result = await listUncollectedRepairTickets();
+    res.json(result);
+  })
+);
+
+// Send bulk or selected SMS reminders for uncollected repairs (Q25)
+router.post(
+  '/uncollected/send-sms',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { ticketIds } = req.body || {};
+    const result = await sendUncollectedSmsReminders(ticketIds);
+    res.json(result);
+  })
+);
 
 // 1. List repairs
 router.get(

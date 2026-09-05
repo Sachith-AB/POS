@@ -20,7 +20,7 @@ export async function runDailySummaryJob() {
 
   // Format daily summary report
   const message = 
-    `📊 Store Daily Summary — ${todayStr}\n` +
+    `Store Daily Summary — ${todayStr}\n` +
     `---------------------------\n` +
     `Completed Sales: ${summary.today.salesCount} bills\n` +
     `Today's Revenue: Rs ${summary.today.revenue.toFixed(2)}\n` +

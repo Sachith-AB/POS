@@ -15,6 +15,12 @@ import {
   photoUploadRequested,
   photoDeleteRequested,
   operationFailed,
+  recentSaleCheckRequested,
+  recentSaleCheckLoaded,
+  uncollectedTicketsRequested,
+  uncollectedTicketsLoaded,
+  sendUncollectedSmsRequested,
+  sendUncollectedSmsDone,
   type RepairTicket,
 } from './repairsSlice';
 
@@ -91,6 +97,46 @@ function* deletePhotoWorker(action: ReturnType<typeof photoDeleteRequested>) {
   }
 }
 
+function* checkRecentSaleWorker(action: ReturnType<typeof recentSaleCheckRequested>) {
+  try {
+    const phone = action.payload;
+    if (!phone || phone.length < 7) {
+      yield put(recentSaleCheckLoaded({ hasRecentSale: false }));
+      return;
+    }
+    const res: { hasRecentSale: boolean; sale?: any; firstDaysRule?: number } = yield call(
+      api.get,
+      `/repairs/recent-sale-check?phone=${encodeURIComponent(phone)}`
+    );
+    yield put(recentSaleCheckLoaded(res));
+  } catch {
+    yield put(recentSaleCheckLoaded({ hasRecentSale: false }));
+  }
+}
+
+function* fetchUncollectedTicketsWorker() {
+  try {
+    const res: { thresholdDays: number; total: number; items: RepairTicket[] } = yield call(
+      api.get,
+      '/repairs/uncollected'
+    );
+    yield put(uncollectedTicketsLoaded(res));
+  } catch (err: any) {
+    yield put(operationFailed(err.message || 'Failed to fetch uncollected tickets'));
+  }
+}
+
+function* sendUncollectedSmsWorker(action: ReturnType<typeof sendUncollectedSmsRequested>) {
+  try {
+    const ticketIds = action.payload;
+    yield call(api.post, '/repairs/uncollected/send-sms', { ticketIds });
+    yield put(sendUncollectedSmsDone());
+    yield put(uncollectedTicketsRequested());
+  } catch (err: any) {
+    yield put(operationFailed(err.message || 'Failed to send SMS reminders'));
+  }
+}
+
 function* onFiltersChangedWorker() {
   const state: RootState = yield select();
   yield put(ticketsRequested(state.repairs.filters));
@@ -103,6 +149,9 @@ export default function* repairsSaga() {
   yield takeLatest(ticketUpdateRequested.type, updateTicketWorker);
   yield takeLatest(photoUploadRequested.type, uploadPhotoWorker);
   yield takeLatest(photoDeleteRequested.type, deletePhotoWorker);
+  yield takeLatest(recentSaleCheckRequested.type, checkRecentSaleWorker);
+  yield takeLatest(uncollectedTicketsRequested.type, fetchUncollectedTicketsWorker);
+  yield takeLatest(sendUncollectedSmsRequested.type, sendUncollectedSmsWorker);
   
   // Watcher for filter changes
   yield debounce(400, filtersChanged.type, onFiltersChangedWorker);
