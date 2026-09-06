@@ -18,7 +18,7 @@ import {
   TRADE_IN_STATUSES,
   CUSTOMER_SORT_FIELDS,
   CUSTOMER_PAYMENT_STATUSES,
-} from './enums';
+} from './enums.js';
 
 const hexColor = z
   .string()

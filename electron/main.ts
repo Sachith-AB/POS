@@ -25,14 +25,14 @@ function isServerRunning(): Promise<boolean> {
 async function ensureBackendServer() {
   if (isDev) {
     // In dev mode, wait for the concurrent dev:server (tsx watch) to start
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 20; i++) {
       if (await isServerRunning()) {
         console.log('[Main] Connected to dev backend server on http://localhost:4000');
         return;
       }
       await new Promise((r) => setTimeout(r, 500));
     }
-    console.warn('[Main] Dev backend server not detected yet on http://localhost:4000');
+    console.warn('[Main] Dev backend server not detected after 10s on http://localhost:4000');
     return;
   }
 
@@ -56,12 +56,20 @@ async function ensureBackendServer() {
 
   console.log('[Main] Starting embedded backend server on port 4000...');
   try {
-    // Import backend server directly inside Electron's Node runtime (has native .asar support)
-    // @ts-ignore
-    await import('../apps/server/dist/index.js');
+    const { pathToFileURL } = await import('url');
+    const serverPath = app.isPackaged
+      ? path.join(app.getAppPath().replace('app.asar', 'app.asar.unpacked'), 'apps/server/dist/index.js')
+      : path.join(__dirname, '../apps/server/dist/index.js');
+    const serverUrl = pathToFileURL(serverPath).href;
+    const dynamicImport = new Function('specifier', 'return import(specifier)');
+    await dynamicImport(serverUrl);
     console.log('[Main] Embedded backend server started successfully on http://localhost:4000');
-  } catch (err) {
+  } catch (err: any) {
     console.error('[Main] Failed to start embedded backend server:', err);
+    dialog.showErrorBox(
+      'POS Server Error',
+      `Failed to start backend server on port 4000:\n\n${err?.stack || err?.message || err}`
+    );
   }
 }
 
