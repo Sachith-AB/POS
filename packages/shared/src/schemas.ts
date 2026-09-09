@@ -279,7 +279,7 @@ export type WarrantyPeriodInput = z.infer<typeof warrantyPeriodSchema>;
 export const supplierSchema = z.object({
   name: z.string().min(1).max(120),
   phone: z.string().max(20).nullable().optional(),
-  email: z.string().email().nullable().optional(),
+  email: z.string().email().nullable().optional().or(z.literal('')),
   address: z.string().max(255).nullable().optional(),
   notes: z.string().max(1000).nullable().optional(),
 });

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiAlertTriangle, FiX, FiCheck, FiArrowRight, FiPackage } from 'react-icons/fi';
-import { IoNotificationsOutline, IoNotifications } from "react-icons/io5";
+import { FiX, FiCheck, FiArrowRight, FiPackage } from 'react-icons/fi';
+import { IoNotificationsOutline } from "react-icons/io5";
 import { toast } from 'react-toastify';
 import { api } from '../lib/api';
 import type { Product } from '../features/products/productsSlice';

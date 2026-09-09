@@ -6,14 +6,31 @@ import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { toast } from 'react-toastify';
 import type { Product } from '../features/products/productsSlice';
-import { FiSearch, FiEdit2, FiTrash2, FiAlertTriangle, FiBox, FiRefreshCw, FiDollarSign } from 'react-icons/fi';
+import {
+  FiSearch,
+  FiEdit2,
+  FiTrash2,
+  FiAlertTriangle,
+  FiBox,
+  FiRefreshCw,
+  FiDollarSign,
+  FiArrowDownLeft,
+  FiArrowUpRight,
+  FiClock,
+  FiFileText,
+  FiFilter,
+  FiTrendingUp,
+  FiCheckCircle,
+} from 'react-icons/fi';
 import {
   barcodeEntered,
   batchSubmitRequested,
   invoiceRefChanged,
+  isCreditPurchaseChanged,
   lineAdded,
   lineRemoved,
   quickCreateRequested,
+  supplierIdChanged,
   supplierNameChanged,
 } from '../features/stock/stockSlice';
 
@@ -32,11 +49,58 @@ interface SupplierItem {
   id: string;
   name: string;
   phone: string | null;
-  contactPerson: string | null;
+  email?: string | null;
+  contactPerson?: string | null;
+  address?: string | null;
+  notes?: string | null;
   totalPayable: number | string;
   paidAmount: number | string;
   outstandingBalance: number | string;
   transactions?: any[];
+}
+
+interface StockMovementItem {
+  id: string;
+  productId: string;
+  supplierId: string | null;
+  type: 'RECEIVE' | 'SALE' | 'RETURN' | 'ADJUSTMENT';
+  quantityDelta: number;
+  costPriceAtTime: number | string | null;
+  supplierName: string | null;
+  invoiceRef: string | null;
+  employeeId: string;
+  createdAt: string;
+  product?: {
+    id: string;
+    name: string;
+    sku: string;
+    barcode: string | null;
+    sellPrice: number | string;
+  };
+  supplier?: {
+    id: string;
+    name: string;
+    phone: string | null;
+  } | null;
+  employee?: {
+    id: string;
+    name: string;
+  };
+}
+
+interface SupplierTransactionRecord {
+  id: string;
+  supplierId: string;
+  type: 'PURCHASE' | 'PAYMENT' | 'RETURN_CREDIT';
+  amount: number | string;
+  reference: string | null;
+  notes: string | null;
+  createdAt: string;
+  supplier?: {
+    id: string;
+    name: string;
+    phone: string | null;
+  };
 }
 
 interface TradeInItem {
@@ -54,8 +118,17 @@ interface TradeInItem {
 // Sub-component 1: Receive Stock Panel
 function ReceiveStockPanel() {
   const dispatch = useAppDispatch();
-  const { matchedProduct, notFoundBarcode, pendingLines, supplierName, invoiceRef, submitting, lastBatchCount } =
-    useAppSelector((s) => s.stock);
+  const {
+    matchedProduct,
+    notFoundBarcode,
+    pendingLines,
+    supplierName,
+    supplierId,
+    invoiceRef,
+    isCreditPurchase,
+    submitting,
+    lastBatchCount,
+  } = useAppSelector((s) => s.stock);
 
   const [code, setCode] = useState('');
   const [qty, setQty] = useState('1');
@@ -74,12 +147,14 @@ function ReceiveStockPanel() {
   const [quickWarrantyId, setQuickWarrantyId] = useState('');
   const [quickWarrantyDays, setQuickWarrantyDays] = useState('');
 
+  // Serialized IMEIs for New Product form
+  const [newProductImeis, setNewProductImeis] = useState<string[]>([]);
+  const [newProductImeiInput, setNewProductImeiInput] = useState('');
+
   // Auxiliary data
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [warranties, setWarranties] = useState<WarrantyOption[]>([]);
   const [suppliers, setSuppliers] = useState<SupplierItem[]>([]);
-  const [selectedSupplierId, setSelectedSupplierId] = useState('');
-  const [isCreditPurchase, setIsCreditPurchase] = useState(false);
 
   // Custom manual receive states
   const [receiveMode, setReceiveMode] = useState<'scan' | 'search' | 'create'>('scan');
@@ -132,12 +207,22 @@ function ReceiveStockPanel() {
     }
   }, [receiveMode]);
 
+  const loadSuppliers = () => {
+    api.get<SupplierItem[]>('/suppliers').then((data) => setSuppliers(data || [])).catch(() => {});
+  };
+
   useEffect(() => {
     // Fetch categories, warranties, and suppliers
     api.get<CategoryItem[]>('/categories').then((data) => setCategories(data || [])).catch(() => {});
     api.get<WarrantyOption[]>('/warranties').then((data) => setWarranties(data || [])).catch(() => {});
-    api.get<SupplierItem[]>('/suppliers').then((data) => setSuppliers(data || [])).catch(() => {});
+    loadSuppliers();
   }, []);
+
+  useEffect(() => {
+    if (lastBatchCount != null) {
+      loadSuppliers();
+    }
+  }, [lastBatchCount]);
 
   useEffect(() => {
     if (matchedProduct) {
@@ -240,6 +325,12 @@ function ReceiveStockPanel() {
     e.preventDefault();
     if (!quickName.trim()) return;
 
+    const intakeQty = isSerializedProduct ? newProductImeis.length : (Number(quickQty) || 1);
+    if (isSerializedProduct && intakeQty === 0) {
+      toast.warn('Please add at least 1 IMEI / serial number for serialized products');
+      return;
+    }
+
     try {
       const barcodeValue = manualBarcode.trim() || `MAN-${Date.now()}`;
       const product = await api.post<Product>('/products', {
@@ -252,7 +343,7 @@ function ReceiveStockPanel() {
         businessPrice: quickBusiness ? Number(quickBusiness) : undefined,
         warrantyPeriodId: quickWarrantyId || undefined,
         warrantyDurationDays: quickWarrantyDays ? parseInt(quickWarrantyDays) : undefined,
-        quantity: Number(quickQty) || 0,
+        quantity: 0, // Initially 0, batch receiving will intake this product
         category: quickCategory.trim() || 'Mobile Phones',
         isSerialized: isSerializedProduct,
         lowStockThreshold: 3,
@@ -262,9 +353,9 @@ function ReceiveStockPanel() {
         lineAdded({
           productId: product.id,
           name: product.name,
-          quantityDelta: product.quantity,
+          quantityDelta: intakeQty,
           costPriceAtTime: Number(product.costPrice),
-          imeis: [],
+          imeis: isSerializedProduct ? newProductImeis : [],
         })
       );
 
@@ -279,8 +370,10 @@ function ReceiveStockPanel() {
       setQuickWarrantyDays('');
       setManualBarcode('');
       setIsSerializedProduct(false);
+      setNewProductImeis([]);
+      setNewProductImeiInput('');
       setReceiveMode('scan');
-      toast.success(`Product "${product.name}" created successfully`);
+      toast.success(`Product "${product.name}" created & added ${intakeQty} to intake batch`);
     } catch (err: any) {
       toast.error(err.message || 'Failed to create product');
     }
@@ -437,13 +530,14 @@ function ReceiveStockPanel() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="text-[10px] text-muted block mb-0.5">Cost Price (Rs) *</label>
                 <Input
                   required
                   type="number"
                   min={0}
+                  step="any"
                   placeholder="0.00"
                   value={quickCost}
                   onChange={(e) => setQuickCost(e.target.value)}
@@ -451,8 +545,21 @@ function ReceiveStockPanel() {
                 />
               </div>
               <div>
+                <label className="text-[10px] text-muted block mb-0.5">Quantity to Add *</label>
+                <Input
+                  required
+                  type="number"
+                  min={1}
+                  placeholder="1"
+                  value={isSerializedProduct ? String(newProductImeis.length) : quickQty}
+                  onChange={(e) => setQuickQty(e.target.value)}
+                  disabled={isSerializedProduct}
+                  className="w-full text-xs font-mono"
+                />
+              </div>
+              <div>
                 <div className="flex items-center justify-between mb-0.5">
-                  <label className="text-[10px] text-muted block">Category (50+ available)</label>
+                  <label className="text-[10px] text-muted block truncate">Category</label>
                   <button
                     type="button"
                     onClick={() => {
@@ -462,7 +569,7 @@ function ReceiveStockPanel() {
                     }}
                     className="text-[10px] font-semibold text-primary hover:underline flex items-center gap-0.5 cursor-pointer"
                   >
-                    + New Category
+                    + New
                   </button>
                 </div>
                 <select
@@ -490,6 +597,70 @@ function ReceiveStockPanel() {
                 </select>
               </div>
             </div>
+
+            {/* Serial / IMEI scanning for New Product */}
+            {isSerializedProduct && (
+              <div className="rounded-xl bg-canvas border border-border p-2.5 space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-bold uppercase text-muted">
+                    Serial / IMEI Numbers ({newProductImeis.length})
+                  </label>
+                  <span className="text-[10px] text-primary font-semibold">
+                    Quantity auto-set: {newProductImeis.length} units
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Scan or enter IMEI / Serial #..."
+                    value={newProductImeiInput}
+                    onChange={(e) => setNewProductImeiInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const val = newProductImeiInput.trim();
+                        if (val && !newProductImeis.includes(val)) {
+                          setNewProductImeis((prev) => [...prev, val]);
+                          setNewProductImeiInput('');
+                        }
+                      }
+                    }}
+                    className="text-xs font-mono flex-1"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      const val = newProductImeiInput.trim();
+                      if (val && !newProductImeis.includes(val)) {
+                        setNewProductImeis((prev) => [...prev, val]);
+                        setNewProductImeiInput('');
+                      }
+                    }}
+                    className="text-xs"
+                  >
+                    + Add IMEI
+                  </Button>
+                </div>
+                {newProductImeis.length > 0 && (
+                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                    {newProductImeis.map((im, idx) => (
+                      <span
+                        key={idx}
+                        className="bg-surface border border-border px-2 py-0.5 rounded text-[10px] font-mono flex items-center gap-1"
+                      >
+                        {im}
+                        <button
+                          type="button"
+                          onClick={() => setNewProductImeis((prev) => prev.filter((_, i) => i !== idx))}
+                          className="text-rose-500 hover:text-rose-700 font-bold ml-1 cursor-pointer"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Configurable Warranty Per Product (User Request) */}
             <div className="rounded-xl bg-canvas border border-border p-2.5 space-y-1">
@@ -524,7 +695,14 @@ function ReceiveStockPanel() {
                 <input
                   type="checkbox"
                   checked={isSerializedProduct}
-                  onChange={(e) => setIsSerializedProduct(e.target.checked)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsSerializedProduct(checked);
+                    if (!checked) {
+                      setNewProductImeis([]);
+                      setNewProductImeiInput('');
+                    }
+                  }}
                   className="rounded border-border text-primary"
                 />
                 <span>Track Serial / IMEI Numbers</span>
@@ -661,11 +839,12 @@ function ReceiveStockPanel() {
             <div>
               <label className="text-[10px] font-semibold text-muted block mb-0.5">Supplier</label>
               <select
-                value={selectedSupplierId}
+                value={supplierId}
                 onChange={(e) => {
-                  setSelectedSupplierId(e.target.value);
-                  const sup = suppliers.find((s) => s.id === e.target.value);
-                  if (sup) dispatch(supplierNameChanged(sup.name));
+                  const sId = e.target.value;
+                  dispatch(supplierIdChanged(sId));
+                  const sup = suppliers.find((s) => s.id === sId);
+                  dispatch(supplierNameChanged(sup ? sup.name : ''));
                 }}
                 className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-ink"
               >
@@ -678,12 +857,24 @@ function ReceiveStockPanel() {
               </select>
             </div>
             <div>
-              <label className="text-[10px] font-semibold text-muted block mb-0.5">Invoice #</label>
+              <div className="flex justify-between items-center mb-0.5">
+                <label className="text-[10px] font-semibold text-muted block">Invoice / Ref #</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const rnd = `INV-${Date.now().toString().slice(-6)}-${Math.floor(1000 + Math.random() * 9000)}`;
+                    dispatch(invoiceRefChanged(rnd));
+                  }}
+                  className="text-[10px] font-semibold text-primary hover:underline cursor-pointer"
+                >
+                  Generate Ref
+                </button>
+              </div>
               <Input
                 placeholder="INV-..."
                 value={invoiceRef}
                 onChange={(e) => dispatch(invoiceRefChanged(e.target.value))}
-                className="text-xs py-1"
+                className="text-xs py-1 font-mono"
               />
             </div>
           </div>
@@ -692,7 +883,7 @@ function ReceiveStockPanel() {
             <input
               type="checkbox"
               checked={isCreditPurchase}
-              onChange={(e) => setIsCreditPurchase(e.target.checked)}
+              onChange={(e) => dispatch(isCreditPurchaseChanged(e.target.checked))}
               className="rounded border-border text-primary"
             />
             <span>Record as Credit Purchase (Track Supplier Payable)</span>
@@ -730,10 +921,55 @@ function ReceiveStockPanel() {
           )}
         </div>
 
-        <div className="border-t border-border pt-3 flex justify-between items-center text-sm font-bold text-ink mb-3">
-          <span>Total Units to Receive:</span>
-          <span className="font-mono text-base">{totalUnits} units</span>
-        </div>
+        {/* Batch totals and live supplier balance calculation */}
+        {(() => {
+          const totalBatchCost = pendingLines.reduce(
+            (sum, l) => sum + (l.costPriceAtTime ?? 0) * l.quantityDelta,
+            0
+          );
+          const currentSupplier = suppliers.find((s) => s.id === supplierId);
+          const currentBal = currentSupplier ? Number(currentSupplier.outstandingBalance) : 0;
+          const projectedBal = isCreditPurchase ? currentBal + totalBatchCost : currentBal;
+
+          return (
+            <div className="border-t border-border pt-3 space-y-1.5 mb-3 text-xs">
+              <div className="flex justify-between items-center font-bold text-ink">
+                <span>Total Units to Receive:</span>
+                <span className="font-mono text-sm">{totalUnits} units</span>
+              </div>
+              <div className="flex justify-between items-center text-ink font-semibold">
+                <span>Total Batch Value (Cost):</span>
+                <span className="font-mono font-bold text-sm text-primary">
+                  Rs {totalBatchCost.toFixed(2)}
+                </span>
+              </div>
+              {currentSupplier && (
+                <div className="bg-canvas/80 border border-border p-2.5 rounded-xl text-[11px] space-y-1 mt-1">
+                  <div className="flex justify-between">
+                    <span className="text-muted">Supplier:</span>
+                    <span className="font-bold text-ink">{currentSupplier.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">Intake Type:</span>
+                    <span className={`font-semibold ${isCreditPurchase ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      {isCreditPurchase ? 'Credit Purchase (Payable)' : 'Paid / Non-Credit'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">Current Balance:</span>
+                    <span className="font-mono font-medium">Rs {currentBal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-border/60 pt-1 font-bold">
+                    <span>New Balance After Intake:</span>
+                    <span className={`font-mono ${isCreditPurchase ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      Rs {projectedBal.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         <Button
           onClick={() => dispatch(batchSubmitRequested())}
@@ -814,8 +1050,23 @@ function SupplierManagementPanel() {
   // Add form state
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [contactPerson, setContactPerson] = useState('');
+  const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
+  const [notes, setNotes] = useState('');
+  const [savingAdd, setSavingAdd] = useState(false);
+
+  // Edit form state
+  const [editingSupplier, setEditingSupplier] = useState<SupplierItem | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Delete state
+  const [supplierToDelete, setSupplierToDelete] = useState<SupplierItem | null>(null);
+  const [deletingSupplier, setDeletingSupplier] = useState(false);
 
   // Payment form state
   const [payAmount, setPayAmount] = useState('');
@@ -838,16 +1089,73 @@ function SupplierManagementPanel() {
   async function handleAddSupplier(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
+    setSavingAdd(true);
     try {
-      await api.post('/suppliers', { name, phone: phone || null, contactPerson: contactPerson || null, address: address || null });
+      await api.post('/suppliers', {
+        name: name.trim(),
+        phone: phone.trim() || null,
+        email: email.trim() || null,
+        address: address.trim() || null,
+        notes: notes.trim() || null,
+      });
       setShowAddModal(false);
       setName('');
       setPhone('');
-      setContactPerson('');
+      setEmail('');
+      setAddress('');
+      setNotes('');
       loadSuppliers();
       toast.success('Supplier added successfully');
     } catch (err: any) {
       toast.error(err.message || 'Failed to add supplier');
+    } finally {
+      setSavingAdd(false);
+    }
+  }
+
+  function openEditSupplierModal(s: SupplierItem) {
+    setEditingSupplier(s);
+    setEditName(s.name || '');
+    setEditPhone(s.phone || '');
+    setEditEmail(s.email || '');
+    setEditAddress(s.address || '');
+    setEditNotes(s.notes || '');
+  }
+
+  async function handleEditSupplier(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingSupplier || !editName.trim()) return;
+    setSavingEdit(true);
+    try {
+      await api.patch(`/suppliers/${editingSupplier.id}`, {
+        name: editName.trim(),
+        phone: editPhone.trim() || null,
+        email: editEmail.trim() || null,
+        address: editAddress.trim() || null,
+        notes: editNotes.trim() || null,
+      });
+      setEditingSupplier(null);
+      loadSuppliers();
+      toast.success('Supplier updated successfully');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update supplier');
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function confirmDeleteSupplier() {
+    if (!supplierToDelete) return;
+    setDeletingSupplier(true);
+    try {
+      await api.delete(`/suppliers/${supplierToDelete.id}`);
+      toast.success(`Supplier "${supplierToDelete.name}" deleted successfully`);
+      setSupplierToDelete(null);
+      loadSuppliers();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete supplier');
+    } finally {
+      setDeletingSupplier(false);
     }
   }
 
@@ -896,33 +1204,61 @@ function SupplierManagementPanel() {
                 <th className="px-4 py-3 font-mono">Total Purchased</th>
                 <th className="px-4 py-3 font-mono">Paid Amount</th>
                 <th className="px-4 py-3 font-mono">Outstanding Balance</th>
-                <th className="px-4 py-3">Actions</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {suppliers.map((s) => (
                 <tr key={s.id} className="hover:bg-canvas transition-colors">
-                  <td className="px-4 py-3 font-semibold text-ink">{s.name}</td>
+                  <td className="px-4 py-3 font-semibold text-ink">
+                    <div>{s.name}</div>
+                    {s.address ? <div className="text-[11px] font-normal text-muted truncate max-w-[200px]">{s.address}</div> : null}
+                  </td>
                   <td className="px-4 py-3 text-muted">
-                    {s.contactPerson ? `${s.contactPerson} ` : ''}
-                    {s.phone ? `(${s.phone})` : ''}
+                    {s.contactPerson ? <div className="text-ink font-medium">{s.contactPerson}</div> : null}
+                    <div>{s.phone || (s.contactPerson ? '' : '—')}</div>
+                    {s.email ? <div className="text-[11px] text-muted">{s.email}</div> : null}
                   </td>
                   <td className="px-4 py-3 font-mono">Rs {Number(s.totalPayable).toFixed(2)}</td>
                   <td className="px-4 py-3 font-mono text-emerald-600">Rs {Number(s.paidAmount).toFixed(2)}</td>
                   <td className="px-4 py-3 font-mono font-bold text-rose-600">
                     Rs {Number(s.outstandingBalance).toFixed(2)}
                   </td>
-                  <td className="px-4 py-3">
-                    <Button
-                      onClick={() => {
-                        setSelectedSupplier(s);
-                        setShowPayModal(true);
-                      }}
-                      variant="secondary"
-                      className="text-[11px] py-1 px-2.5 font-bold"
-                    >
-                      Record Payment
-                    </Button>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Button
+                        onClick={() => {
+                          setSelectedSupplier(s);
+                          setPayAmount('');
+                          setPayRef(`PAY-${Date.now().toString().slice(-6)}-${Math.floor(1000 + Math.random() * 9000)}`);
+                          setShowPayModal(true);
+                        }}
+                        variant="secondary"
+                        className="text-[11px] py-1 px-2.5 font-bold"
+                        title="Record supplier payment"
+                      >
+                        Record Payment
+                      </Button>
+                      <Button
+                        onClick={() => openEditSupplierModal(s)}
+                        variant="secondary"
+                        className="py-1 px-2.5 text-xs font-semibold flex items-center gap-1"
+                        title="Edit supplier"
+                      >
+                        <FiEdit2 className="h-3 w-3" />
+                        <span>Edit</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setSupplierToDelete(s)}
+                        className="py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 border-rose-200 dark:border-rose-900/50"
+                        title="Delete supplier"
+                      >
+                        <FiTrash2 className="h-3 w-3" />
+                        <span>Delete</span>
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -939,25 +1275,109 @@ function SupplierManagementPanel() {
             <form onSubmit={handleAddSupplier} className="space-y-3 text-xs">
               <div>
                 <label className="text-muted block mb-0.5">Supplier Name *</label>
-                <Input required value={name} onChange={(e) => setName(e.target.value)} className="w-full" />
+                <Input required value={name} onChange={(e) => setName(e.target.value)} className="w-full" placeholder="e.g. Abans PLC" />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-muted block mb-0.5">Phone</label>
-                  <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full" />
+                  <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full" placeholder="e.g. 0771234567" />
                 </div>
                 <div>
-                  <label className="text-muted block mb-0.5">Contact Person</label>
-                  <Input value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} className="w-full" />
+                  <label className="text-muted block mb-0.5">Email</label>
+                  <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full" placeholder="supplier@example.com" />
                 </div>
               </div>
               <div>
                 <label className="text-muted block mb-0.5">Address</label>
-                <Input value={address} onChange={(e) => setAddress(e.target.value)} className="w-full" />
+                <Input value={address} onChange={(e) => setAddress(e.target.value)} className="w-full" placeholder="Colombo 03, Sri Lanka" />
+              </div>
+              <div>
+                <label className="text-muted block mb-0.5">Notes</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                  className="w-full rounded-xl border border-border bg-surface p-2.5 text-xs text-ink focus:border-brand focus:outline-hidden resize-none"
+                  placeholder="Additional supplier notes or contact info..."
+                />
               </div>
               <div className="flex justify-end gap-2 pt-2 border-t border-border">
-                <Button type="button" onClick={() => setShowAddModal(false)} variant="secondary">Cancel</Button>
-                <Button type="submit" className="font-bold">Save Supplier</Button>
+                <Button type="button" onClick={() => setShowAddModal(false)} variant="secondary" disabled={savingAdd}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="font-bold" disabled={savingAdd}>
+                  {savingAdd ? 'Saving…' : 'Save Supplier'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Edit Supplier Modal */}
+      {editingSupplier ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-xl">
+            <h3 className="font-bold text-base text-ink mb-3">Edit Supplier</h3>
+            <form onSubmit={handleEditSupplier} className="space-y-3 text-xs">
+              <div>
+                <label className="text-muted block mb-0.5">Supplier Name *</label>
+                <Input
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-muted block mb-0.5">Phone</label>
+                  <Input
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="text-muted block mb-0.5">Email</label>
+                  <Input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-muted block mb-0.5">Address</label>
+                <Input
+                  value={editAddress}
+                  onChange={(e) => setEditAddress(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label className="text-muted block mb-0.5">Notes</label>
+                <textarea
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  rows={2}
+                  className="w-full rounded-xl border border-border bg-surface p-2.5 text-xs text-ink focus:border-brand focus:outline-hidden resize-none"
+                  placeholder="Additional supplier notes..."
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                <Button
+                  type="button"
+                  onClick={() => setEditingSupplier(null)}
+                  variant="secondary"
+                  disabled={savingEdit}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" className="font-bold" disabled={savingEdit}>
+                  {savingEdit ? 'Saving…' : 'Save Changes'}
+                </Button>
               </div>
             </form>
           </div>
@@ -986,8 +1406,17 @@ function SupplierManagementPanel() {
                 />
               </div>
               <div>
-                <label className="text-muted block mb-0.5">Reference / Bank Slip #</label>
-                <Input value={payRef} onChange={(e) => setPayRef(e.target.value)} className="w-full" />
+                <div className="flex justify-between items-center mb-0.5">
+                  <label className="text-muted block font-medium">Reference / Bank Slip #</label>
+                  <button
+                    type="button"
+                    onClick={() => setPayRef(`PAY-${Date.now().toString().slice(-6)}-${Math.floor(1000 + Math.random() * 9000)}`)}
+                    className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
+                  >
+                    Random Ref
+                  </button>
+                </div>
+                <Input value={payRef} onChange={(e) => setPayRef(e.target.value)} className="w-full font-mono" />
               </div>
               <div className="flex justify-end gap-2 pt-2 border-t border-border">
                 <Button type="button" onClick={() => setShowPayModal(false)} variant="secondary">Cancel</Button>
@@ -997,6 +1426,17 @@ function SupplierManagementPanel() {
           </div>
         </div>
       ) : null}
+
+      {/* Delete Supplier Confirmation Modal */}
+      <ConfirmModal
+        isOpen={Boolean(supplierToDelete)}
+        title="Delete Supplier?"
+        message={`Are you sure you want to delete supplier "${supplierToDelete?.name}"? This will permanently remove the supplier and any associated transaction records.`}
+        confirmLabel="Delete Supplier"
+        loading={deletingSupplier}
+        onConfirm={confirmDeleteSupplier}
+        onCancel={() => setSupplierToDelete(null)}
+      />
     </div>
   );
 }
@@ -1968,8 +2408,465 @@ function ProductListPanel() {
   );
 }
 
+// Sub-component 7: Transaction & Stock Movement History Panel
+function TransactionHistoryPanel() {
+  const [activeHistoryTab, setActiveHistoryTab] = useState<'movements' | 'ledger'>('movements');
+
+  // Stock movements state
+  const [movements, setMovements] = useState<StockMovementItem[]>([]);
+  const [movementsLoading, setMovementsLoading] = useState(true);
+  const [movementSearch, setMovementSearch] = useState('');
+  const [movementType, setMovementType] = useState('ALL');
+  const [selectedSupplierId, setSelectedSupplierId] = useState('ALL');
+
+  // Supplier ledger state
+  const [ledger, setLedger] = useState<SupplierTransactionRecord[]>([]);
+  const [ledgerLoading, setLedgerLoading] = useState(true);
+  const [ledgerSearch, setLedgerSearch] = useState('');
+  const [ledgerType, setLedgerType] = useState('ALL');
+  const [ledgerSupplierId, setLedgerSupplierId] = useState('ALL');
+
+  // Shared auxiliary data
+  const [suppliers, setSuppliers] = useState<SupplierItem[]>([]);
+
+  useEffect(() => {
+    api.get<SupplierItem[]>('/suppliers').then((data) => setSuppliers(data || [])).catch(() => {});
+  }, []);
+
+  const loadMovements = () => {
+    setMovementsLoading(true);
+    const params = new URLSearchParams();
+    if (movementSearch.trim()) params.append('search', movementSearch.trim());
+    if (movementType !== 'ALL') params.append('type', movementType);
+    if (selectedSupplierId !== 'ALL') params.append('supplierId', selectedSupplierId);
+
+    api.get<{ items: StockMovementItem[]; total: number }>(`/stock-movements?${params.toString()}`)
+      .then((res) => {
+        setMovements(res.items || []);
+        setMovementsLoading(false);
+      })
+      .catch(() => setMovementsLoading(false));
+  };
+
+  const loadLedger = () => {
+    setLedgerLoading(true);
+    const params = new URLSearchParams();
+    if (ledgerSearch.trim()) params.append('search', ledgerSearch.trim());
+    if (ledgerType !== 'ALL') params.append('type', ledgerType);
+    if (ledgerSupplierId !== 'ALL') params.append('supplierId', ledgerSupplierId);
+
+    api.get<{ items: SupplierTransactionRecord[]; total: number }>(`/suppliers/transactions?${params.toString()}`)
+      .then((res) => {
+        setLedger(res.items || []);
+        setLedgerLoading(false);
+      })
+      .catch(() => setLedgerLoading(false));
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (activeHistoryTab === 'movements') {
+        loadMovements();
+      } else {
+        loadLedger();
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [activeHistoryTab, movementSearch, movementType, selectedSupplierId, ledgerSearch, ledgerType, ledgerSupplierId]);
+
+  // Movement Stats
+  const totalReceivedUnits = movements
+    .filter((m) => m.type === 'RECEIVE')
+    .reduce((sum, m) => sum + Math.abs(m.quantityDelta), 0);
+  const totalSoldUnits = movements
+    .filter((m) => m.type === 'SALE')
+    .reduce((sum, m) => sum + Math.abs(m.quantityDelta), 0);
+  const totalReceivedCost = movements
+    .filter((m) => m.type === 'RECEIVE')
+    .reduce((sum, m) => sum + (Number(m.costPriceAtTime) || 0) * Math.abs(m.quantityDelta), 0);
+
+  // Ledger Stats
+  const totalPurchases = ledger
+    .filter((t) => t.type === 'PURCHASE')
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+  const totalPayments = ledger
+    .filter((t) => t.type === 'PAYMENT')
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+  const totalReturnCredits = ledger
+    .filter((t) => t.type === 'RETURN_CREDIT')
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-5 shadow-xs space-y-4">
+      {/* Header and Sub-Tab Switcher */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-border pb-4">
+        <div>
+          <h3 className="font-bold text-base text-ink flex items-center gap-2">
+            <FiClock className="text-primary h-4 w-4" />
+            Stock &amp; Supplier Transaction History
+          </h3>
+          <p className="text-xs text-muted">
+            Complete audit trail of stock intakes, delivery movements, sales deductions, and supplier financial ledger
+          </p>
+        </div>
+
+        <div className="flex bg-canvas p-1 rounded-xl border border-border gap-1 text-xs font-semibold self-start sm:self-auto">
+          <button
+            onClick={() => setActiveHistoryTab('movements')}
+            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all flex items-center gap-1.5 ${
+              activeHistoryTab === 'movements' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
+            }`}
+          >
+            <FiBox className="h-3.5 w-3.5" />
+            <span>Stock Movements ({movements.length})</span>
+          </button>
+          <button
+            onClick={() => setActiveHistoryTab('ledger')}
+            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all flex items-center gap-1.5 ${
+              activeHistoryTab === 'ledger' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
+            }`}
+          >
+            <FiDollarSign className="h-3.5 w-3.5" />
+            <span>Supplier Ledger ({ledger.length})</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Stock Movements View */}
+      {activeHistoryTab === 'movements' && (
+        <div className="space-y-4">
+          {/* Movement KPI summary cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-canvas border border-border rounded-xl p-3">
+              <span className="text-[11px] font-medium text-muted block mb-1">Total Units Received</span>
+              <div className="flex items-center justify-between">
+                <span className="text-lg font-bold text-emerald-600 font-mono">+{totalReceivedUnits}</span>
+                <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600"><FiArrowDownLeft className="h-4 w-4" /></span>
+              </div>
+            </div>
+            <div className="bg-canvas border border-border rounded-xl p-3">
+              <span className="text-[11px] font-medium text-muted block mb-1">Total Units Sold</span>
+              <div className="flex items-center justify-between">
+                <span className="text-lg font-bold text-sky-600 font-mono">-{totalSoldUnits}</span>
+                <span className="p-1.5 rounded-lg bg-sky-500/10 text-sky-600"><FiArrowUpRight className="h-4 w-4" /></span>
+              </div>
+            </div>
+            <div className="bg-canvas border border-border rounded-xl p-3">
+              <span className="text-[11px] font-medium text-muted block mb-1">Intake Cost Value</span>
+              <div className="flex items-center justify-between">
+                <span className="text-lg font-bold text-primary font-mono">
+                  Rs {totalReceivedCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="p-1.5 rounded-lg bg-primary/10 text-primary"><FiTrendingUp className="h-4 w-4" /></span>
+              </div>
+            </div>
+            <div className="bg-canvas border border-border rounded-xl p-3">
+              <span className="text-[11px] font-medium text-muted block mb-1">Total Movement Logs</span>
+              <div className="flex items-center justify-between">
+                <span className="text-lg font-bold text-ink font-mono">{movements.length}</span>
+                <span className="p-1.5 rounded-lg bg-canvas border border-border text-muted"><FiFileText className="h-4 w-4" /></span>
+              </div>
+            </div>
+          </div>
+
+          {/* Filters Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 bg-canvas p-2.5 rounded-xl border border-border">
+            <div className="flex flex-wrap items-center gap-2 flex-1">
+              <div className="relative min-w-[200px] flex-1">
+                <FiSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted h-3.5 w-3.5" />
+                <Input
+                  placeholder="Search product, barcode, invoice #, supplier..."
+                  value={movementSearch}
+                  onChange={(e) => setMovementSearch(e.target.value)}
+                  className="w-full pl-8 text-xs py-1.5"
+                />
+              </div>
+
+              <select
+                value={movementType}
+                onChange={(e) => setMovementType(e.target.value)}
+                className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink"
+              >
+                <option value="ALL">All Types</option>
+                <option value="RECEIVE">RECEIVE (Intake)</option>
+                <option value="SALE">SALE (Sold)</option>
+                <option value="RETURN">RETURN</option>
+                <option value="ADJUSTMENT">ADJUSTMENT</option>
+              </select>
+
+              <select
+                value={selectedSupplierId}
+                onChange={(e) => setSelectedSupplierId(e.target.value)}
+                className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink max-w-[180px] truncate"
+              >
+                <option value="ALL">All Suppliers</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={loadMovements}
+              className="text-xs py-1.5 px-3 flex items-center gap-1"
+            >
+              <FiRefreshCw className={`h-3 w-3 ${movementsLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </Button>
+          </div>
+
+          {/* Movements Table */}
+          {movementsLoading ? (
+            <p className="text-xs text-muted p-8 text-center bg-canvas rounded-xl">Loading movements history…</p>
+          ) : movements.length === 0 ? (
+            <p className="text-xs text-muted p-8 text-center bg-canvas rounded-xl">No stock movements found matching filters.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-border">
+              <table className="w-full border-collapse text-left text-xs text-ink">
+                <thead>
+                  <tr className="bg-canvas border-b border-border text-xs font-bold text-muted uppercase">
+                    <th className="px-3.5 py-3">Date / Time</th>
+                    <th className="px-3.5 py-3">Product Info</th>
+                    <th className="px-3.5 py-3 text-center">Movement Type</th>
+                    <th className="px-3.5 py-3 text-right font-mono">Qty Delta</th>
+                    <th className="px-3.5 py-3 text-right font-mono">Cost at Time</th>
+                    <th className="px-3.5 py-3 text-right font-mono">Total Value</th>
+                    <th className="px-3.5 py-3">Supplier / Invoice</th>
+                    <th className="px-3.5 py-3">Handled By</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {movements.map((m) => {
+                    const isPositive = m.quantityDelta > 0;
+                    const unitCost = Number(m.costPriceAtTime) || (m.product ? Number(m.product.sellPrice) : 0);
+                    const totalVal = unitCost * Math.abs(m.quantityDelta);
+
+                    let badgeColor = 'bg-surface border-border text-muted';
+                    if (m.type === 'RECEIVE') badgeColor = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700';
+                    else if (m.type === 'SALE') badgeColor = 'bg-sky-500/10 border-sky-500/30 text-sky-700';
+                    else if (m.type === 'RETURN') badgeColor = 'bg-amber-500/10 border-amber-500/30 text-amber-700';
+                    else if (m.type === 'ADJUSTMENT') badgeColor = 'bg-purple-500/10 border-purple-500/30 text-purple-700';
+
+                    return (
+                      <tr key={m.id} className="hover:bg-canvas transition-colors">
+                        <td className="px-3.5 py-2.5 font-mono text-muted text-[11px] whitespace-nowrap">
+                          {new Date(m.createdAt).toLocaleString(undefined, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </td>
+                        <td className="px-3.5 py-2.5">
+                          <p className="font-semibold text-ink">{m.product?.name || 'Unknown Product'}</p>
+                          <p className="text-[10px] font-mono text-muted">
+                            SKU: {m.product?.sku || 'N/A'} {m.product?.barcode ? `| Barcode: ${m.product.barcode}` : ''}
+                          </p>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}`}>
+                            {m.type}
+                          </span>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right font-mono font-bold text-xs whitespace-nowrap">
+                          <span className={isPositive ? 'text-emerald-600' : 'text-rose-600'}>
+                            {isPositive ? `+${m.quantityDelta}` : m.quantityDelta}
+                          </span>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right font-mono text-muted whitespace-nowrap">
+                          {m.costPriceAtTime != null ? `Rs ${Number(m.costPriceAtTime).toFixed(2)}` : '—'}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right font-mono font-semibold text-ink whitespace-nowrap">
+                          {totalVal > 0 ? `Rs ${totalVal.toFixed(2)}` : '—'}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-xs">
+                          {m.supplier?.name || m.supplierName ? (
+                            <p className="font-medium text-ink">{m.supplier?.name || m.supplierName}</p>
+                          ) : (
+                            <p className="text-muted">—</p>
+                          )}
+                          {m.invoiceRef && <p className="text-[10px] font-mono text-muted">Inv: {m.invoiceRef}</p>}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-xs text-muted">
+                          {m.employee?.name || 'System'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Supplier Ledger View */}
+      {activeHistoryTab === 'ledger' && (
+        <div className="space-y-4">
+          {/* Ledger KPI summary cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-canvas border border-border rounded-xl p-3">
+              <span className="text-[11px] font-medium text-muted block mb-1">Total Purchases (Credit)</span>
+              <div className="flex items-center justify-between">
+                <span className="text-lg font-bold text-rose-600 font-mono">
+                  Rs {totalPurchases.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="p-1.5 rounded-lg bg-rose-500/10 text-rose-600"><FiArrowUpRight className="h-4 w-4" /></span>
+              </div>
+            </div>
+            <div className="bg-canvas border border-border rounded-xl p-3">
+              <span className="text-[11px] font-medium text-muted block mb-1">Total Payments Settled</span>
+              <div className="flex items-center justify-between">
+                <span className="text-lg font-bold text-emerald-600 font-mono">
+                  Rs {totalPayments.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600"><FiCheckCircle className="h-4 w-4" /></span>
+              </div>
+            </div>
+            <div className="bg-canvas border border-border rounded-xl p-3">
+              <span className="text-[11px] font-medium text-muted block mb-1">Total Return Credits</span>
+              <div className="flex items-center justify-between">
+                <span className="text-lg font-bold text-amber-600 font-mono">
+                  Rs {totalReturnCredits.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600"><FiDollarSign className="h-4 w-4" /></span>
+              </div>
+            </div>
+            <div className="bg-canvas border border-border rounded-xl p-3">
+              <span className="text-[11px] font-medium text-muted block mb-1">Total Ledger Entries</span>
+              <div className="flex items-center justify-between">
+                <span className="text-lg font-bold text-ink font-mono">{ledger.length}</span>
+                <span className="p-1.5 rounded-lg bg-canvas border border-border text-muted"><FiFileText className="h-4 w-4" /></span>
+              </div>
+            </div>
+          </div>
+
+          {/* Ledger Filters */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 bg-canvas p-2.5 rounded-xl border border-border">
+            <div className="flex flex-wrap items-center gap-2 flex-1">
+              <div className="relative min-w-[200px] flex-1">
+                <FiSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted h-3.5 w-3.5" />
+                <Input
+                  placeholder="Search supplier, reference, or notes..."
+                  value={ledgerSearch}
+                  onChange={(e) => setLedgerSearch(e.target.value)}
+                  className="w-full pl-8 text-xs py-1.5"
+                />
+              </div>
+
+              <select
+                value={ledgerType}
+                onChange={(e) => setLedgerType(e.target.value)}
+                className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink"
+              >
+                <option value="ALL">All Types</option>
+                <option value="PURCHASE">PURCHASE (Credit / Payable)</option>
+                <option value="PAYMENT">PAYMENT (Settlement)</option>
+                <option value="RETURN_CREDIT">RETURN_CREDIT</option>
+              </select>
+
+              <select
+                value={ledgerSupplierId}
+                onChange={(e) => setLedgerSupplierId(e.target.value)}
+                className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink max-w-[180px] truncate"
+              >
+                <option value="ALL">All Suppliers</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={loadLedger}
+              className="text-xs py-1.5 px-3 flex items-center gap-1"
+            >
+              <FiRefreshCw className={`h-3 w-3 ${ledgerLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </Button>
+          </div>
+
+          {/* Ledger Table */}
+          {ledgerLoading ? (
+            <p className="text-xs text-muted p-8 text-center bg-canvas rounded-xl">Loading supplier ledger…</p>
+          ) : ledger.length === 0 ? (
+            <p className="text-xs text-muted p-8 text-center bg-canvas rounded-xl">No supplier transactions recorded yet.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-border">
+              <table className="w-full border-collapse text-left text-xs text-ink">
+                <thead>
+                  <tr className="bg-canvas border-b border-border text-xs font-bold text-muted uppercase">
+                    <th className="px-3.5 py-3">Date / Time</th>
+                    <th className="px-3.5 py-3">Supplier</th>
+                    <th className="px-3.5 py-3 text-center">Type</th>
+                    <th className="px-3.5 py-3 text-right font-mono">Amount (Rs)</th>
+                    <th className="px-3.5 py-3">Reference #</th>
+                    <th className="px-3.5 py-3">Notes &amp; Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {ledger.map((t) => {
+                    let badgeColor = 'bg-surface border-border text-muted';
+                    let amountColor = 'text-ink';
+                    if (t.type === 'PURCHASE') {
+                      badgeColor = 'bg-rose-500/10 border-rose-500/30 text-rose-700';
+                      amountColor = 'text-rose-600 font-bold';
+                    } else if (t.type === 'PAYMENT') {
+                      badgeColor = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700';
+                      amountColor = 'text-emerald-600 font-bold';
+                    } else if (t.type === 'RETURN_CREDIT') {
+                      badgeColor = 'bg-amber-500/10 border-amber-500/30 text-amber-700';
+                      amountColor = 'text-amber-600 font-bold';
+                    }
+
+                    return (
+                      <tr key={t.id} className="hover:bg-canvas transition-colors">
+                        <td className="px-3.5 py-2.5 font-mono text-muted text-[11px] whitespace-nowrap">
+                          {new Date(t.createdAt).toLocaleString(undefined, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </td>
+                        <td className="px-3.5 py-2.5 font-semibold text-ink">
+                          {t.supplier?.name || 'Supplier'}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}`}>
+                            {t.type === 'PURCHASE' ? 'PURCHASE (PAYABLE)' : t.type}
+                          </span>
+                        </td>
+                        <td className={`px-3.5 py-2.5 text-right font-mono ${amountColor} whitespace-nowrap`}>
+                          Rs {Number(t.amount).toFixed(2)}
+                        </td>
+                        <td className="px-3.5 py-2.5 font-mono text-xs text-muted whitespace-nowrap">
+                          {t.reference || '—'}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-xs text-muted max-w-md truncate">
+                          {t.notes || '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function StockPage() {
-  const [activeTab, setActiveTab] = useState<'receiving' | 'products' | 'suppliers' | 'returns' | 'tradeins' | 'labels'>('receiving');
+  const [activeTab, setActiveTab] = useState<'receiving' | 'products' | 'suppliers' | 'returns' | 'tradeins' | 'labels' | 'history'>('receiving');
 
   return (
     <div className="flex h-full flex-col min-h-0 bg-canvas p-4 space-y-3 overflow-y-auto">
@@ -1977,7 +2874,7 @@ export function StockPage() {
       <div className="flex items-center justify-between border-b border-border bg-surface p-4 rounded-2xl shadow-xs">
         <div>
           <h2 className="text-lg font-bold text-ink">Inventory, Suppliers &amp; Stock Operations</h2>
-          <p className="text-xs text-muted">Manage stock intake, 50+ categories, wholesale/business pricing, suppliers, and trade-ins</p>
+          <p className="text-xs text-muted">Manage stock intake, 50+ categories, wholesale/business pricing, suppliers, and transaction history</p>
         </div>
 
         <div className="flex bg-canvas p-1 rounded-xl border border-border gap-1 text-xs font-semibold">
@@ -2004,6 +2901,14 @@ export function StockPage() {
             }`}
           >
             Suppliers
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`px-3 py-1.5 rounded-lg cursor-pointer transition-all ${
+              activeTab === 'history' ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'
+            }`}
+          >
+            Transaction History
           </button>
           <button
             onClick={() => setActiveTab('returns')}
@@ -2036,6 +2941,7 @@ export function StockPage() {
       {activeTab === 'receiving' && <ReceiveStockPanel />}
       {activeTab === 'products' && <ProductListPanel />}
       {activeTab === 'suppliers' && <SupplierManagementPanel />}
+      {activeTab === 'history' && <TransactionHistoryPanel />}
       {activeTab === 'returns' && <SupplierReturnsPanel />}
       {activeTab === 'tradeins' && <TradeInManagementPanel />}
       {activeTab === 'labels' && (

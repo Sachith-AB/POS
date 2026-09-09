@@ -38,13 +38,17 @@ function* quickCreateWorker(action: ReturnType<typeof quickCreateRequested>) {
   );
 }
 
+import { toast } from 'react-toastify';
+
 function* batchSubmitWorker() {
   const state: RootState = yield select();
-  const { pendingLines, supplierName, invoiceRef } = state.stock;
+  const { pendingLines, supplierName, supplierId, invoiceRef, isCreditPurchase } = state.stock;
   try {
     yield call(api.post, '/stock-movements/receive', {
+      supplierId: supplierId || null,
       supplierName: supplierName || null,
       invoiceRef: invoiceRef || null,
+      isCreditPurchase: Boolean(isCreditPurchase),
       lines: pendingLines.map((l) => ({
         productId: l.productId,
         quantityDelta: l.quantityDelta,
@@ -53,8 +57,10 @@ function* batchSubmitWorker() {
       })),
     });
     yield put(batchSubmitted());
-  } catch {
+    toast.success('Stock intake batch finalized and inventory updated!');
+  } catch (err: any) {
     yield put(batchSubmitFailed());
+    toast.error(err.message || 'Failed to submit stock intake batch');
   }
 }
 
