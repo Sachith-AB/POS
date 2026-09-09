@@ -8,6 +8,7 @@ import { UndoToast } from '../components/UndoToast';
 import { Receipt } from '../components/Receipt';
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
+import { toast } from 'react-toastify';
 import type { Product } from '../features/products/productsSlice';
 import {
   activeBillSwitched,
@@ -297,6 +298,7 @@ export function PosPage() {
       }
       setShowSaleUndoToast(false);
       setShowSuccessModal(false);
+      toast.success('Sale successfully undone');
       setTimeout(() => {
         searchRef.current?.focus();
         searchRef.current?.select();
@@ -304,7 +306,7 @@ export function PosPage() {
     } catch (err: unknown) {
       console.error('Failed to undo sale', err);
       const msg = err instanceof Error ? err.message : 'Failed to undo sale';
-      alert(msg);
+      toast.error(msg);
     } finally {
       setUndoingSale(false);
     }

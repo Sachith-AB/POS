@@ -4,6 +4,7 @@ import { asyncHandler, HttpError } from '../middleware/errorHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
   createProduct,
+  deleteProduct,
   getProductByBarcode,
   listDeadStock,
   listLowStock,
@@ -65,6 +66,14 @@ router.patch(
   asyncHandler(async (req, res) => {
     const input = productUpdateSchema.parse(req.body);
     res.json(await updateProduct(req.params.id, input));
+  })
+);
+
+router.delete(
+  '/:id',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json(await deleteProduct(req.params.id));
   })
 );
 

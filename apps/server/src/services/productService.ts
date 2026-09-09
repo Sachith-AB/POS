@@ -64,3 +64,25 @@ export async function listDeadStock(months: number) {
   const all = await prisma.product.findMany();
   return all.filter((p) => !soldIds.has(p.id));
 }
+
+export async function deleteProduct(id: string) {
+  await getProductById(id);
+  const salesCount = await prisma.saleItem.count({
+    where: { productId: id },
+  });
+  if (salesCount > 0) {
+    throw new HttpError(
+      400,
+      'Cannot delete product because it is recorded in completed or parked sales history. You can adjust its stock quantity to 0 instead.'
+    );
+  }
+
+  await prisma.$transaction([
+    prisma.serializedItem.deleteMany({ where: { productId: id } }),
+    prisma.stockMovement.deleteMany({ where: { productId: id } }),
+    prisma.supplierReturn.deleteMany({ where: { productId: id } }),
+    prisma.product.delete({ where: { id } }),
+  ]);
+
+  return { success: true, id };
+}

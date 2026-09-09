@@ -3,8 +3,10 @@ import { useAppDispatch, useAppSelector } from '../app/hooks';
 import { api } from '../lib/api';
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { toast } from 'react-toastify';
 import type { Product } from '../features/products/productsSlice';
-import { FiSearch, FiEdit2, FiAlertTriangle, FiBox, FiRefreshCw, FiDollarSign } from 'react-icons/fi';
+import { FiSearch, FiEdit2, FiTrash2, FiAlertTriangle, FiBox, FiRefreshCw, FiDollarSign } from 'react-icons/fi';
 import {
   barcodeEntered,
   batchSubmitRequested,
@@ -278,8 +280,9 @@ function ReceiveStockPanel() {
       setManualBarcode('');
       setIsSerializedProduct(false);
       setReceiveMode('scan');
+      toast.success(`Product "${product.name}" created successfully`);
     } catch (err: any) {
-      alert(err.message || 'Failed to create product');
+      toast.error(err.message || 'Failed to create product');
     }
   }
 
@@ -842,8 +845,9 @@ function SupplierManagementPanel() {
       setPhone('');
       setContactPerson('');
       loadSuppliers();
+      toast.success('Supplier added successfully');
     } catch (err: any) {
-      alert(err.message || 'Failed to add supplier');
+      toast.error(err.message || 'Failed to add supplier');
     }
   }
 
@@ -860,8 +864,9 @@ function SupplierManagementPanel() {
       setPayAmount('');
       setPayRef('');
       loadSuppliers();
+      toast.success('Payment recorded successfully');
     } catch (err: any) {
-      alert(err.message || 'Failed to record payment');
+      toast.error(err.message || 'Failed to record payment');
     }
   }
 
@@ -1041,8 +1046,9 @@ function SupplierReturnsPanel() {
       setRefundCredit('');
       setNotes('');
       loadReturns();
+      toast.success('Return processed successfully');
     } catch (err: any) {
-      alert(err.message || 'Failed to process return');
+      toast.error(err.message || 'Failed to process return');
     }
   }
 
@@ -1225,8 +1231,9 @@ function TradeInManagementPanel() {
       setCustName('');
       setCustPhone('');
       loadTradeIns();
+      toast.success('Trade-in accepted successfully');
     } catch (err: any) {
-      alert(err.message || 'Failed to accept trade-in');
+      toast.error(err.message || 'Failed to accept trade-in');
     }
   }
 
@@ -1239,10 +1246,10 @@ function TradeInManagementPanel() {
         resaleSellPrice: parseFloat(sellPrice),
         category: 'Used Phones',
       });
-      alert('Successfully added to inventory for resale!');
+      toast.success('Successfully added to inventory for resale!');
       loadTradeIns();
     } catch (err: any) {
-      alert(err.message || 'Failed to convert to resale');
+      toast.error(err.message || 'Failed to convert to resale');
     }
   }
 
@@ -1519,6 +1526,28 @@ function ProductListPanel() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  // Delete Product Confirmation Modal State
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [deletingProduct, setDeletingProduct] = useState(false);
+
+  const confirmDeleteProduct = async () => {
+    if (!productToDelete) return;
+    setDeletingProduct(true);
+    try {
+      await api.delete(`/products/${productToDelete.id}`);
+      setProducts((prev) => prev.filter((p) => p.id !== productToDelete.id));
+      if (editingProduct?.id === productToDelete.id) {
+        setEditingProduct(null);
+      }
+      toast.success('Product deleted successfully');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete product');
+    } finally {
+      setDeletingProduct(false);
+      setProductToDelete(null);
+    }
+  };
+
   const loadProducts = () => {
     setLoading(true);
     const params = new URLSearchParams();
@@ -1759,14 +1788,26 @@ function ProductListPanel() {
                         <div className="text-[9px] text-muted mt-0.5 font-mono">Limit: {p.lowStockThreshold}</div>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <Button
-                          onClick={() => openEditModal(p)}
-                          variant="secondary"
-                          className="py-1 px-2.5 text-xs font-semibold flex items-center gap-1 ml-auto"
-                        >
-                          <FiEdit2 className="h-3 w-3" />
-                          <span>Edit</span>
-                        </Button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            onClick={() => openEditModal(p)}
+                            variant="secondary"
+                            className="py-1 px-2.5 text-xs font-semibold flex items-center gap-1"
+                          >
+                            <FiEdit2 className="h-3 w-3" />
+                            <span>Edit</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => setProductToDelete(p)}
+                            className="py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 border-rose-200 dark:border-rose-900/50"
+                            title="Delete product"
+                          >
+                            <FiTrash2 className="h-3 w-3" />
+                            <span>Delete</span>
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1880,27 +1921,49 @@ function ProductListPanel() {
 
               {editError ? <p className="text-[11px] text-danger">{editError}</p> : null}
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <div className="flex justify-between items-center pt-2 border-t border-border">
                 <Button
                   type="button"
-                  onClick={() => setEditingProduct(null)}
-                  variant="secondary"
-                  className="text-xs"
+                  variant="ghost"
+                  onClick={() => setProductToDelete(editingProduct)}
+                  className="text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center gap-1"
                 >
-                  Cancel
+                  <FiTrash2 className="h-3.5 w-3.5" />
+                  <span>Delete Product</span>
                 </Button>
-                <Button
-                  type="submit"
-                  loading={savingEdit}
-                  className="text-xs font-bold px-4"
-                >
-                  Save Changes
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => setEditingProduct(null)}
+                    variant="secondary"
+                    className="text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    loading={savingEdit}
+                    className="text-xs font-bold px-4"
+                  >
+                    Save Changes
+                  </Button>
+                </div>
               </div>
             </form>
           </div>
         </div>
       ) : null}
+
+      {/* Delete Product Confirmation Modal */}
+      <ConfirmModal
+        isOpen={Boolean(productToDelete)}
+        title="Delete Product?"
+        message={`Are you sure you want to delete "${productToDelete?.name}" (SKU: ${productToDelete?.sku})? This product will be permanently removed from catalog.`}
+        confirmLabel="Delete Product"
+        loading={deletingProduct}
+        onConfirm={confirmDeleteProduct}
+        onCancel={() => setProductToDelete(null)}
+      />
     </div>
   );
 }
