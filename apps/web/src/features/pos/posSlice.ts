@@ -72,6 +72,48 @@ const posSlice = createSlice({
         });
       }
     },
+    serializedItemAdded(
+      state,
+      action: PayloadAction<{
+        productId: string;
+        name: string;
+        barcode?: string | null;
+        unitPrice: number;
+        retailPrice?: number;
+        wholesalePrice?: number | null;
+        businessPrice?: number | null;
+        priceType?: 'RETAIL' | 'WHOLESALE' | 'BUSINESS';
+        serializedItemId: string;
+        imei: string;
+      }>
+    ) {
+      const bill = state.bills[state.activeIndex];
+      const existingImei = bill.items.find((i) => i.serializedItemId === action.payload.serializedItemId);
+      if (existingImei) return;
+
+      bill.items.push({
+        ...action.payload,
+        quantity: 1,
+        isSerialized: true,
+        retailPrice: action.payload.retailPrice ?? action.payload.unitPrice,
+        priceType: action.payload.priceType ?? 'RETAIL',
+      });
+    },
+    lineImeiSelected(
+      state,
+      action: PayloadAction<{
+        productId: string;
+        serializedItemId: string;
+        imei: string;
+      }>
+    ) {
+      const bill = state.bills[state.activeIndex];
+      const line = bill.items.find((i) => i.productId === action.payload.productId);
+      if (line) {
+        line.serializedItemId = action.payload.serializedItemId;
+        line.imei = action.payload.imei;
+      }
+    },
     lineQuantityChanged(state, action: PayloadAction<{ productId: string; quantity: number }>) {
       const bill = state.bills[state.activeIndex];
       const line = bill.items.find((i) => i.productId === action.payload.productId);
@@ -99,9 +141,11 @@ const posSlice = createSlice({
         }
       }
     },
-    lineRemoved(state, action: PayloadAction<{ productId: string }>) {
+    lineRemoved(state, action: PayloadAction<{ productId: string; serializedItemId?: string | null }>) {
       const bill = state.bills[state.activeIndex];
-      const idx = bill.items.findIndex((i) => i.productId === action.payload.productId);
+      const idx = action.payload.serializedItemId
+        ? bill.items.findIndex((i) => i.serializedItemId === action.payload.serializedItemId)
+        : bill.items.findIndex((i) => i.productId === action.payload.productId);
       if (idx >= 0) {
         state.lastRemoved = { billIndex: state.activeIndex, line: bill.items[idx] };
         bill.items.splice(idx, 1);
@@ -228,6 +272,8 @@ const posSlice = createSlice({
 
 export const {
   itemScanned,
+  serializedItemAdded,
+  lineImeiSelected,
   lineQuantityChanged,
   linePriceChanged,
   linePriceTypeChanged,

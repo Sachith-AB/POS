@@ -8,6 +8,9 @@ export interface CartLine {
   wholesalePrice?: number | null;
   businessPrice?: number | null;
   priceType?: 'RETAIL' | 'WHOLESALE' | 'BUSINESS';
+  isSerialized?: boolean;
+  serializedItemId?: string | null;
+  imei?: string | null;
 }
 
 export interface CustomerCategoryItem {

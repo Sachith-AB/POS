@@ -226,6 +226,12 @@ export async function completeSale(saleId: string, employeeId: string, paymentAm
   const sale = await getSale(saleId);
   if (sale.status !== 'PARKED') throw new HttpError(409, 'Sale already finalized');
 
+  // Mandatory customer requirement for mobile phone sales
+  const hasSerializedItem = sale.items.some((i) => i.serializedItemId);
+  if (hasSerializedItem && !sale.customerId) {
+    throw new HttpError(400, 'Customer details are mandatory when selling a mobile phone');
+  }
+
   const settings = await getSettings();
   const discountPercent = (Number(sale.discount) / Math.max(1, Number(sale.subtotal))) * 100;
 
@@ -239,7 +245,17 @@ export async function completeSale(saleId: string, employeeId: string, paymentAm
     return tx.sale.update({
       where: { id: saleId },
       data: { status: 'COMPLETED' },
-      include: { items: true, payments: true, customer: true, warrantyPeriod: true },
+      include: {
+        items: {
+          include: {
+            product: true,
+            warrantyPeriod: true,
+          },
+        },
+        payments: true,
+        customer: true,
+        warrantyPeriod: true,
+      },
     });
   });
 

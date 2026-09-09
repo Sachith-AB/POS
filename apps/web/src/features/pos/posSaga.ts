@@ -23,6 +23,7 @@ import type { BillSlot, CartLine, CustomerMatchedData } from './posTypes';
 function toItemsInput(items: CartLine[]) {
   return items.map((i) => ({
     productId: i.productId,
+    serializedItemId: i.serializedItemId ?? undefined,
     quantity: i.quantity,
     unitPrice: i.unitPrice,
     priceType: i.priceType || 'RETAIL',
@@ -129,10 +130,14 @@ import {
   discountPercentChanged,
   warrantySelected,
   tradeInApplied,
+  serializedItemAdded,
+  lineImeiSelected,
 } from './posSlice';
 
 const AUTOSAVE_TRIGGERS = [
   itemScanned.type,
+  serializedItemAdded.type,
+  lineImeiSelected.type,
   lineQuantityChanged.type,
   linePriceChanged.type,
   linePriceTypeChanged.type,

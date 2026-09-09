@@ -46,12 +46,19 @@ export function Receipt() {
         </div>
       ) : null}
       <hr className="my-1 border-black" />
-      {receipt.items.map((item) => (
-        <div key={item.productId} className="my-0.5 flex justify-between">
-          <span>
-            {item.name} x{item.quantity}
-          </span>
-          <span>{(item.quantity * item.unitPrice).toFixed(2)}</span>
+      {receipt.items.map((item, idx) => (
+        <div key={item.productId + (item.serializedItemId || idx)} className="my-1">
+          <div className="flex justify-between">
+            <span className="font-semibold">
+              {item.name} x{item.quantity}
+            </span>
+            <span>{(item.quantity * item.unitPrice).toFixed(2)}</span>
+          </div>
+          {item.imei ? (
+            <div className="text-[10px] font-mono font-bold text-black pl-2">
+              IMEI: {item.imei}
+            </div>
+          ) : null}
         </div>
       ))}
       <hr className="my-1 border-black" />

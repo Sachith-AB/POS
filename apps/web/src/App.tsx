@@ -6,7 +6,7 @@ import { meRequested } from './features/auth/authSlice';
 import { settingsRequested } from './features/settings/settingsSlice';
 import { AppHeader } from './components/AppHeader';
 import { LoginPage } from './pages/LoginPage';
-import { PosPage } from './pages/PosPage';
+import { PosPage } from './pages/pos/PosPage';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
