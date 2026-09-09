@@ -238,6 +238,11 @@ export type RepairTicketUpdateInput = z.infer<typeof repairTicketUpdateSchema>;
 
 export const installmentPlanCreateSchema = z.object({
   saleId: z.string().min(1),
+  customerId: z.string().nullable().optional(),
+  customerPhone: z.string().nullable().optional(),
+  customerName: z.string().nullable().optional(),
+  customerNic: z.string().nullable().optional(),
+  customerAddress: z.string().nullable().optional(),
   downPayment: z.number().nonnegative(),
   numberOfInstallments: z.number().int().positive(),
   intervalDays: z.number().int().positive(),

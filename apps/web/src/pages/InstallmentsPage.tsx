@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { FiUser, FiCheckCircle, FiAlertCircle, FiCamera, FiRefreshCw, FiTrash2 } from 'react-icons/fi';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
 import {
   plansRequested,
@@ -13,6 +14,7 @@ import {
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { UndoToast } from '../components/UndoToast';
+import { PhotoCapture } from '../components/PhotoCapture';
 import { api } from '../lib/api';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -21,14 +23,52 @@ const STATUS_COLORS: Record<string, string> = {
   OVERDUE: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
 };
 
+interface CustomerDetails {
+  id: string;
+  name: string | null;
+  phone: string;
+  nic?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  categories?: {
+    category: {
+      id: string;
+      name: string;
+      emoji?: string | null;
+      color?: string | null;
+    };
+  }[];
+}
+
 interface SaleMinimal {
   id: string;
   total: string;
   createdAt: string;
   customer?: {
+    id?: string;
     name: string | null;
     phone: string;
+    nic?: string | null;
+    address?: string | null;
+    categories?: {
+      category: {
+        id: string;
+        name: string;
+        emoji?: string | null;
+        color?: string | null;
+      };
+    }[];
   } | null;
+}
+
+function getImageUrl(url?: string | null) {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+  const serverHost = apiBase.replace(/\/api\/?$/, '');
+  return `${serverHost}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
 export function InstallmentsPage() {
@@ -44,6 +84,21 @@ export function InstallmentsPage() {
   const [salesSearch, setSalesSearch] = useState('');
   const [completedSales, setCompletedSales] = useState<SaleMinimal[]>([]);
   const [selectedSale, setSelectedSale] = useState<SaleMinimal | null>(null);
+
+  // Customer details for agreement holder
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [customerNic, setCustomerNic] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
+  const [customerDetails, setCustomerDetails] = useState<CustomerDetails | null>(null);
+  const [customerSearching, setCustomerSearching] = useState(false);
+  const [customerSearched, setCustomerSearched] = useState(false);
+
+  // Search matched customer from salesSearch (top input)
+  const [searchMatchedCustomer, setSearchMatchedCustomer] = useState<CustomerDetails | null>(null);
+
+  // Guarantor auto-fill info
+  const [guarantorCustomerMatch, setGuarantorCustomerMatch] = useState<CustomerDetails | null>(null);
 
   // Barcode scanner lookup input (Q10)
   const [barcodeSearch, setBarcodeSearch] = useState('');
@@ -62,6 +117,39 @@ export function InstallmentsPage() {
   const [guarantorAddress, setGuarantorAddress] = useState('');
   const [guarantorPhotoUrl, setGuarantorPhotoUrl] = useState('');
   const [guarantorConsent, setGuarantorConsent] = useState(true);
+
+  // Guarantor photo webcam capture state
+  const [showPhotoCaptureModal, setShowPhotoCaptureModal] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  async function handleGuarantorPhotoCapture(file: File) {
+    setUploadingPhoto(true);
+    setShowPhotoCaptureModal(false);
+
+    // Immediate local preview so image displays right away
+    const localUrl = URL.createObjectURL(file);
+    setGuarantorPhotoUrl(localUrl);
+
+    try {
+      const formData = new FormData();
+      formData.append('photo', file);
+      const res = await api.upload<{ url: string }>('/installments/upload-photo', formData);
+      if (res?.url) {
+        setGuarantorPhotoUrl(res.url);
+      }
+    } catch {
+      // Fallback: convert file to base64 Data URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          setGuarantorPhotoUrl(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
 
   // Record payment state: Strictly Cash & Bank Transfer only (Q12)
   const [payAmount, setPayAmount] = useState('');
@@ -119,6 +207,105 @@ export function InstallmentsPage() {
     }
   }, [createSaleId, settings]);
 
+  // Sync customer details when selectedSale is selected or loaded
+  useEffect(() => {
+    if (selectedSale?.customer) {
+      const p = selectedSale.customer.phone || '';
+      setCustomerPhone(p);
+      setCustomerName(selectedSale.customer.name || '');
+      setCustomerNic(selectedSale.customer.nic || '');
+      setCustomerAddress(selectedSale.customer.address || '');
+      if (p) {
+        api
+          .get<CustomerDetails | null>(`/customers/lookup?phone=${encodeURIComponent(p)}`)
+          .then((res) => {
+            if (res) {
+              setCustomerDetails(res);
+              if (res.nic) setCustomerNic(res.nic);
+              if (res.address) setCustomerAddress(res.address);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [selectedSale?.id]);
+
+  // Debounced customer lookup when customerPhone changes
+  useEffect(() => {
+    const trimmed = customerPhone.trim();
+    if (trimmed.length < 3) {
+      setCustomerDetails(null);
+      setCustomerSearched(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setCustomerSearching(true);
+      api
+        .get<CustomerDetails | null>(`/customers/lookup?phone=${encodeURIComponent(trimmed)}`)
+        .then((res) => {
+          setCustomerSearched(true);
+          if (res) {
+            setCustomerDetails(res);
+            setCustomerName(res.name || '');
+            setCustomerNic(res.nic || '');
+            setCustomerAddress(res.address || '');
+            setSelectedSale((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    customer: {
+                      id: res.id,
+                      name: res.name,
+                      phone: res.phone,
+                      nic: res.nic,
+                      address: res.address,
+                      categories: res.categories,
+                    },
+                  }
+                : null
+            );
+          } else {
+            setCustomerDetails(null);
+          }
+        })
+        .catch(() => {
+          setCustomerDetails(null);
+          setCustomerSearched(true);
+        })
+        .finally(() => {
+          setCustomerSearching(false);
+        });
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [customerPhone]);
+
+  // Debounced lookup for guarantor phone
+  useEffect(() => {
+    const trimmed = guarantorPhone.trim();
+    if (trimmed.length < 4) {
+      setGuarantorCustomerMatch(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      api
+        .get<CustomerDetails | null>(`/customers/lookup?phone=${encodeURIComponent(trimmed)}`)
+        .then((res) => {
+          if (res) {
+            setGuarantorCustomerMatch(res);
+            if (!guarantorName && res.name) setGuarantorName(res.name);
+            if (!guarantorNic && res.nic) setGuarantorNic(res.nic);
+            if (!guarantorAddress && res.address) setGuarantorAddress(res.address);
+          } else {
+            setGuarantorCustomerMatch(null);
+          }
+        })
+        .catch(() => setGuarantorCustomerMatch(null));
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [guarantorPhone]);
+
   async function handleBarcodeLookup() {
     const code = barcodeSearch.trim();
     if (!code) return;
@@ -135,22 +322,55 @@ export function InstallmentsPage() {
     }
   }
 
-
-
-  // Fetch completed sales for dropdown search
+  // Fetch completed sales for dropdown search + customer phone check
   useEffect(() => {
-    if (showCreateModal && salesSearch.trim().length >= 2) {
-      api.get<any>(`/sales?search=${encodeURIComponent(salesSearch)}`).then((res) => {
-        // Filter out those that are not completed
-        const list = (res.items || res || []).filter(
-          (s: any) => s.status === 'COMPLETED'
-        );
-        setCompletedSales(list);
-      }).catch((err) => console.error(err));
+    const trimmed = salesSearch.trim();
+    if (showCreateModal && trimmed.length >= 2) {
+      api
+        .get<any>(`/sales?search=${encodeURIComponent(trimmed)}&status=COMPLETED`)
+        .then((res) => {
+          const list = (res.items || res || []).filter((s: any) => s.status === 'COMPLETED');
+          setCompletedSales(list);
+        })
+        .catch((err) => console.error(err));
+
+      if (trimmed.length >= 3) {
+        api
+          .get<CustomerDetails | null>(`/customers/lookup?phone=${encodeURIComponent(trimmed)}`)
+          .then((c) => {
+            setSearchMatchedCustomer(c);
+            if (c && selectedSale && (!selectedSale.customer || !selectedSale.customer.phone)) {
+              setCustomerPhone(c.phone);
+              setCustomerName(c.name || '');
+              setCustomerNic(c.nic || '');
+              setCustomerAddress(c.address || '');
+              setCustomerDetails(c);
+              setSelectedSale((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      customer: {
+                        id: c.id,
+                        name: c.name,
+                        phone: c.phone,
+                        nic: c.nic,
+                        address: c.address,
+                        categories: c.categories,
+                      },
+                    }
+                  : null
+              );
+            }
+          })
+          .catch(() => setSearchMatchedCustomer(null));
+      } else {
+        setSearchMatchedCustomer(null);
+      }
     } else {
       setCompletedSales([]);
+      setSearchMatchedCustomer(null);
     }
-  }, [showCreateModal, salesSearch]);
+  }, [showCreateModal, salesSearch, selectedSale?.id]);
 
   function handleFilterStatusChange(status: string) {
     dispatch(filtersChanged({ status, page: 1 }));
@@ -166,8 +386,19 @@ export function InstallmentsPage() {
     e.preventDefault();
     if (!selectedSale || !downPayment || !numberOfInstallments || !intervalDays) return;
 
+    const effectivePhone = customerPhone.trim() || selectedSale.customer?.phone || '';
+    if (!effectivePhone) {
+      alert('Please enter a customer phone number for the installment agreement.');
+      return;
+    }
+
     const previousFormState = {
       selectedSale,
+      customerPhone,
+      customerName,
+      customerNic,
+      customerAddress,
+      customerDetails,
       downPayment,
       numberOfInstallments,
       intervalDays,
@@ -184,6 +415,11 @@ export function InstallmentsPage() {
     dispatch(
       planCreateRequested({
         saleId: selectedSale.id,
+        customerId: customerDetails?.id,
+        customerPhone: effectivePhone,
+        customerName: customerName.trim() || undefined,
+        customerNic: customerNic.trim() || undefined,
+        customerAddress: customerAddress.trim() || undefined,
         downPayment: parseFloat(downPayment),
         numberOfInstallments: parseInt(numberOfInstallments),
         intervalDays: parseInt(intervalDays),
@@ -200,6 +436,14 @@ export function InstallmentsPage() {
 
     // Reset create state
     setSelectedSale(null);
+    setCustomerPhone('');
+    setCustomerName('');
+    setCustomerNic('');
+    setCustomerAddress('');
+    setCustomerDetails(null);
+    setCustomerSearched(false);
+    setSearchMatchedCustomer(null);
+    setGuarantorCustomerMatch(null);
     setDownPayment('');
     setGuarantorName('');
     setGuarantorNic('');
@@ -210,6 +454,11 @@ export function InstallmentsPage() {
 
     triggerUndoToast('Installment plan created', () => {
       setSelectedSale(previousFormState.selectedSale);
+      setCustomerPhone(previousFormState.customerPhone);
+      setCustomerName(previousFormState.customerName);
+      setCustomerNic(previousFormState.customerNic);
+      setCustomerAddress(previousFormState.customerAddress);
+      setCustomerDetails(previousFormState.customerDetails);
       setDownPayment(previousFormState.downPayment);
       setNumberOfInstallments(previousFormState.numberOfInstallments);
       setIntervalDays(previousFormState.intervalDays);
@@ -683,8 +932,61 @@ export function InstallmentsPage() {
                   className="w-full text-xs"
                 />
 
+                {/* If typing phone in search box matches a customer */}
+                {searchMatchedCustomer ? (
+                  <div className="mt-2 flex items-center justify-between p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs animate-in fade-in duration-150">
+                    <div className="flex items-center gap-2">
+                      <FiUser className="text-emerald-600 dark:text-emerald-400 h-4 w-4 shrink-0" />
+                      <div>
+                        <div className="font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                          <span>Customer in DB: {searchMatchedCustomer.name || 'Registered Customer'}</span>
+                          {searchMatchedCustomer.categories?.map((c) => (
+                            <span
+                              key={c.category.id}
+                              className="px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-emerald-600 text-white"
+                            >
+                              {c.category.emoji ? `${c.category.emoji} ` : ''}
+                              {c.category.name}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="text-[11px] text-muted font-mono">
+                          Phone: {searchMatchedCustomer.phone} {searchMatchedCustomer.nic ? `• NIC: ${searchMatchedCustomer.nic}` : ''}
+                          {searchMatchedCustomer.address ? ` • ${searchMatchedCustomer.address}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomerPhone(searchMatchedCustomer.phone);
+                        setCustomerName(searchMatchedCustomer.name || '');
+                        setCustomerNic(searchMatchedCustomer.nic || '');
+                        setCustomerAddress(searchMatchedCustomer.address || '');
+                        setCustomerDetails(searchMatchedCustomer);
+                        if (selectedSale) {
+                          setSelectedSale({
+                            ...selectedSale,
+                            customer: {
+                              id: searchMatchedCustomer.id,
+                              name: searchMatchedCustomer.name,
+                              phone: searchMatchedCustomer.phone,
+                              nic: searchMatchedCustomer.nic,
+                              address: searchMatchedCustomer.address,
+                              categories: searchMatchedCustomer.categories,
+                            },
+                          });
+                        }
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer transition-colors"
+                    >
+                      Attach
+                    </button>
+                  </div>
+                ) : null}
+
                 {completedSales.length > 0 ? (
-                  <div className="mt-1 max-h-32 overflow-y-auto border border-border rounded-lg bg-canvas divide-y divide-border">
+                  <div className="mt-1 max-h-36 overflow-y-auto border border-border rounded-lg bg-canvas divide-y divide-border">
                     {completedSales.map((s) => (
                       <div
                         key={s.id}
@@ -692,15 +994,22 @@ export function InstallmentsPage() {
                           setSelectedSale(s);
                           setCompletedSales([]);
                           setSalesSearch('');
+                          if (s.customer?.phone) {
+                            setCustomerPhone(s.customer.phone);
+                            setCustomerName(s.customer.name || '');
+                            setCustomerNic(s.customer.nic || '');
+                            setCustomerAddress(s.customer.address || '');
+                          }
                           // Set default 35% down payment (Q13)
                           const defaultDownPct = settings?.defaultDownPaymentPercent ? Number(settings.defaultDownPaymentPercent) : 35;
                           setDownPayment(((Number(s.total) * defaultDownPct) / 100).toFixed(2));
                         }}
-                        className="p-2 text-xs text-ink cursor-pointer hover:bg-surface-hover flex justify-between"
+                        className="p-2 text-xs text-ink cursor-pointer hover:bg-surface-hover flex justify-between items-center"
                       >
                         <div>
                           <span className="font-bold">{s.customer?.name || 'Walk-in'}</span>
-                          <span className="text-muted ml-2">({s.customer?.phone})</span>
+                          <span className="text-muted ml-2">({s.customer?.phone || 'No phone'})</span>
+                          <span className="text-[10px] text-muted ml-2 font-mono">#{s.id.slice(-6)}</span>
                         </div>
                         <span className="font-mono font-bold">Rs {Number(s.total).toFixed(2)}</span>
                       </div>
@@ -711,12 +1020,136 @@ export function InstallmentsPage() {
 
               {selectedSale ? (
                 <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs">
-                  <p className="font-bold text-primary">Selected Sale Summary:</p>
-                  <p className="mt-1">Customer: {selectedSale.customer?.name || 'Walk-in'} ({selectedSale.customer?.phone})</p>
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold text-primary">Selected Sale Summary:</p>
+                    <span className="text-[10px] font-mono text-muted">ID: {selectedSale.id.slice(-8)}</span>
+                  </div>
+                  <p className="mt-1">
+                    Customer: <span className="font-semibold text-ink">{customerDetails?.name || selectedSale.customer?.name || 'Walk-in'}</span>{' '}
+                    <span className="font-mono">({customerPhone || selectedSale.customer?.phone || 'No phone'})</span>
+                  </p>
                   <p>Sale Date: {new Date(selectedSale.createdAt).toLocaleDateString()}</p>
-                  <p className="font-bold">Total Bill: Rs {Number(selectedSale.total).toFixed(2)}</p>
+                  <p className="font-bold text-ink">Total Bill: Rs {Number(selectedSale.total).toFixed(2)}</p>
                 </div>
               ) : null}
+
+              {/* Customer Details for Agreement */}
+              <div className="rounded-xl border border-border bg-canvas p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-ink uppercase tracking-wide text-xs">
+                    <FiUser className="h-4 w-4 text-primary" />
+                    <span>Customer Details (Agreement Holder)</span>
+                  </div>
+                  {customerDetails ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                      <FiCheckCircle className="h-3 w-3" />
+                      Found in DB
+                    </span>
+                  ) : customerPhone && customerSearched ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                      <FiAlertCircle className="h-3 w-3" />
+                      New Customer
+                    </span>
+                  ) : null}
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-semibold text-muted block mb-1">
+                    Customer Phone Number <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Input
+                      placeholder="07XXXXXXXX"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      className="w-full text-xs font-mono"
+                    />
+                    {customerSearching ? (
+                      <span className="absolute right-3 top-2 text-[10px] text-muted animate-pulse">
+                        Searching DB...
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* If Customer Found in DB */}
+                {customerDetails ? (
+                  <div className="rounded-xl bg-surface p-3 border border-emerald-500/30 space-y-2 animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between">
+                      <div className="font-bold text-ink text-sm flex items-center gap-1.5">
+                        <FiUser className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>{customerDetails.name || 'Registered Customer'}</span>
+                      </div>
+                      {customerDetails.categories && customerDetails.categories.length > 0 ? (
+                        <div className="flex gap-1 flex-wrap">
+                          {customerDetails.categories.map((c) => (
+                            <span
+                              key={c.category.id}
+                              className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-600 text-white shadow-xs"
+                            >
+                              {c.category.emoji ? `${c.category.emoji} ` : ''}
+                              {c.category.name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted">
+                      <div>
+                        <span className="font-medium">NIC:</span>{' '}
+                        <span className="font-mono font-semibold text-ink">{customerDetails.nic || 'Not recorded'}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium">Phone:</span>{' '}
+                        <span className="font-mono font-semibold text-ink">{customerDetails.phone}</span>
+                      </div>
+                    </div>
+                    {customerDetails.address ? (
+                      <div className="text-xs text-muted">
+                        <span className="font-medium">Address:</span>{' '}
+                        <span className="text-ink">{customerDetails.address}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : customerPhone.trim().length >= 3 && customerSearched ? (
+                  /* If New Customer (not found in DB), allow filling details to register */
+                  <div className="space-y-2.5 border-t border-border pt-2.5">
+                    <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-700 dark:text-amber-300">
+                      Customer phone <span className="font-mono font-bold text-ink">{customerPhone}</span> is not registered in the database. Enter details to register:
+                    </div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-[10px] font-semibold text-muted block mb-0.5">Customer Name</label>
+                        <Input
+                          placeholder="Full Name"
+                          value={customerName}
+                          onChange={(e) => setCustomerName(e.target.value)}
+                          className="w-full text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-muted block mb-0.5">Customer NIC</label>
+                        <Input
+                          placeholder="National ID"
+                          value={customerNic}
+                          onChange={(e) => setCustomerNic(e.target.value)}
+                          className="w-full text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-semibold text-muted block mb-0.5">Customer Address</label>
+                      <Input
+                        placeholder="Address"
+                        value={customerAddress}
+                        onChange={(e) => setCustomerAddress(e.target.value)}
+                        className="w-full text-xs"
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
 
               {/* Schedule & Interest Config (Q7, Q13) */}
               <div className="grid grid-cols-2 gap-3">
@@ -832,10 +1265,30 @@ export function InstallmentsPage() {
                       placeholder="07XXXXXXXX"
                       value={guarantorPhone}
                       onChange={(e) => setGuarantorPhone(e.target.value)}
-                      className="w-full text-xs"
+                      className="w-full text-xs font-mono"
                     />
                   </div>
                 </div>
+
+                {guarantorCustomerMatch ? (
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] text-emerald-700 dark:text-emerald-300 animate-in fade-in duration-150">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <FiCheckCircle className="h-3.5 w-3.5 shrink-0" />
+                      Guarantor matched in customer DB: <strong>{guarantorCustomerMatch.name || guarantorCustomerMatch.phone}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (guarantorCustomerMatch.name) setGuarantorName(guarantorCustomerMatch.name);
+                        if (guarantorCustomerMatch.nic) setGuarantorNic(guarantorCustomerMatch.nic);
+                        if (guarantorCustomerMatch.address) setGuarantorAddress(guarantorCustomerMatch.address);
+                      }}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer transition-colors"
+                    >
+                      Fill Info
+                    </button>
+                  </div>
+                ) : null}
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -858,15 +1311,87 @@ export function InstallmentsPage() {
                   </div>
                 </div>
 
-                {/* Guarantor Photo URL and Consent Checkbox */}
-                <div>
-                  <label className="text-[10px] font-semibold text-muted block mb-1">Guarantor Photo (URL or Path)</label>
-                  <Input
-                    placeholder="https://... or path to photo"
-                    value={guarantorPhotoUrl}
-                    onChange={(e) => setGuarantorPhotoUrl(e.target.value)}
-                    className="w-full text-xs"
-                  />
+                {/* Guarantor Photo URL, Web Cam Capture & Preview */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-semibold text-muted block">
+                      Guarantor Photo (Web Cam or URL)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowPhotoCaptureModal(true)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline cursor-pointer"
+                    >
+                      <FiCamera className="h-3.5 w-3.5" />
+                      <span>{guarantorPhotoUrl ? 'Retake via Web Cam' : 'Open Web Cam'}</span>
+                    </button>
+                  </div>
+
+                  {guarantorPhotoUrl ? (
+                    <div className="flex items-center gap-3 p-2.5 rounded-xl border border-emerald-500/25 bg-emerald-500/5 animate-in fade-in duration-150">
+                      <img
+                        src={getImageUrl(guarantorPhotoUrl)}
+                        alt="Guarantor"
+                        className="h-16 w-16 rounded-lg object-cover border border-border bg-surface shrink-0"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          if (guarantorPhotoUrl && !target.src.endsWith(guarantorPhotoUrl)) {
+                            target.src = guarantorPhotoUrl;
+                          }
+                        }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                          <FiCheckCircle className="h-3.5 w-3.5 shrink-0" />
+                          <span>Photo Attached</span>
+                        </div>
+                        <p className="text-[10px] text-muted truncate font-mono mt-0.5" title={guarantorPhotoUrl}>
+                          {guarantorPhotoUrl}
+                        </p>
+                        <div className="flex items-center gap-3 mt-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setShowPhotoCaptureModal(true)}
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline cursor-pointer"
+                          >
+                            <FiRefreshCw className="h-3 w-3" /> Retake Web Cam
+                          </button>
+                          <span className="text-border">•</span>
+                          <button
+                            type="button"
+                            onClick={() => setGuarantorPhotoUrl('')}
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-500 hover:underline cursor-pointer"
+                          >
+                            <FiTrash2 className="h-3 w-3" /> Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <Input
+                          placeholder="https://... or click 'Open Web Cam'"
+                          value={guarantorPhotoUrl}
+                          onChange={(e) => setGuarantorPhotoUrl(e.target.value)}
+                          className="w-full text-xs font-mono"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={() => setShowPhotoCaptureModal(true)}
+                        variant="secondary"
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 whitespace-nowrap font-semibold cursor-pointer"
+                      >
+                        <FiCamera className="h-3.5 w-3.5 text-primary" />
+                        <span>Open Web Cam</span>
+                      </Button>
+                    </div>
+                  )}
+
+                  {uploadingPhoto ? (
+                    <p className="text-[10px] text-primary animate-pulse">Uploading photo to server...</p>
+                  ) : null}
                 </div>
 
                 <label className="flex items-center gap-2 text-xs text-muted cursor-pointer pt-1">
@@ -899,6 +1424,18 @@ export function InstallmentsPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Web Cam Capture Modal Overlay */}
+      {showPhotoCaptureModal ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-lg">
+            <PhotoCapture
+              onCapture={handleGuarantorPhotoCapture}
+              onCancel={() => setShowPhotoCaptureModal(false)}
+            />
           </div>
         </div>
       ) : null}

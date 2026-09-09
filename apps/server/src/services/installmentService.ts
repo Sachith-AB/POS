@@ -79,6 +79,40 @@ export async function createInstallmentPlan(input: InstallmentPlanCreateInput) {
     throw new HttpError(400, 'Down payment covers the entire bill. Installment plan not required.');
   }
 
+  // Link customer to sale if customerId or customerPhone provided
+  if (input.customerId) {
+    await prisma.sale.update({
+      where: { id: input.saleId },
+      data: { customerId: input.customerId },
+    });
+  } else if (input.customerPhone && input.customerPhone.trim()) {
+    const phone = input.customerPhone.trim();
+    let cust = await prisma.customer.findUnique({ where: { phone } });
+    if (!cust) {
+      cust = await prisma.customer.create({
+        data: {
+          phone,
+          name: input.customerName || null,
+          nic: input.customerNic || null,
+          address: input.customerAddress || null,
+        },
+      });
+    } else if (input.customerName || input.customerNic || input.customerAddress) {
+      cust = await prisma.customer.update({
+        where: { id: cust.id },
+        data: {
+          name: input.customerName || cust.name,
+          nic: input.customerNic || cust.nic,
+          address: input.customerAddress || cust.address,
+        },
+      });
+    }
+    await prisma.sale.update({
+      where: { id: input.saleId },
+      data: { customerId: cust.id },
+    });
+  }
+
   // Calculate Interest (Q7)
   const interestMethod = input.interestMethod || 'PERCENTAGE';
   const interestValue = input.interestValue || 0;

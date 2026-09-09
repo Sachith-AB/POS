@@ -29,6 +29,72 @@ export async function listParkedSales(employeeId: string) {
   });
 }
 
+export async function listSales(filters: { search?: string; status?: string; limit?: number }) {
+  const limit = Math.min(Number(filters.limit || 20), 50);
+  const where: any = {};
+
+  if (filters.status && filters.status !== 'ALL') {
+    where.status = filters.status;
+  }
+
+  if (filters.search && filters.search.trim()) {
+    const q = filters.search.trim();
+    const digitsOnly = q.replace(/\D/g, '');
+    const phoneVariants = [q];
+    if (digitsOnly) {
+      phoneVariants.push(digitsOnly);
+      if (digitsOnly.startsWith('0')) phoneVariants.push(digitsOnly.slice(1));
+    }
+
+    where.OR = [
+      { id: { contains: q, mode: 'insensitive' } },
+      {
+        customer: {
+          OR: [
+            { phone: { in: phoneVariants } },
+            { phone: { contains: digitsOnly || q } },
+            { name: { contains: q, mode: 'insensitive' } },
+            { nic: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+      },
+      {
+        items: {
+          some: {
+            product: {
+              name: { contains: q, mode: 'insensitive' },
+            },
+          },
+        },
+      },
+    ];
+  }
+
+  return prisma.sale.findMany({
+    where,
+    include: {
+      customer: {
+        include: {
+          categories: {
+            include: {
+              category: true,
+            },
+          },
+        },
+      },
+      items: {
+        include: {
+          product: true,
+        },
+      },
+      payments: true,
+      installmentPlan: true,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
+}
+
 export async function getSale(id: string) {
   const sale = await prisma.sale.findUnique({
     where: { id },
