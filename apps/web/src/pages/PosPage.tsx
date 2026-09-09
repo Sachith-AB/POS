@@ -478,9 +478,9 @@ export function PosPage() {
                   {discountMode === 'percent' ? <FiPercent className="h-2.5 w-2.5" /> : <FiDollarSign className="h-2.5 w-2.5" />}
                 </button>
               </div>
-              <div className="w-28">
+              <div className="w-28 shrink-0">
                 {discountMode === 'percent' ? (
-                  <div className="relative flex items-center">
+                  <div className="relative flex items-center w-full">
                     <Input
                       type="number"
                       min={0}
@@ -488,19 +488,21 @@ export function PosPage() {
                       placeholder="10"
                       value={bill.discountPercent || ''}
                       onChange={(e) => dispatch(discountPercentChanged(Number(e.target.value) || 0))}
-                      className="text-right pr-6 py-1 text-xs font-mono font-medium"
+                      className="w-full text-right pr-6 py-1 text-xs font-mono font-medium"
                     />
                     <span className="absolute right-2 text-xs text-muted pointer-events-none">%</span>
                   </div>
                 ) : (
-                  <Input
-                    type="number"
-                    min={0}
-                    placeholder="0.00"
-                    value={bill.discount === 0 ? '' : bill.discount}
-                    onChange={(e) => dispatch(discountChanged(Number(e.target.value) || 0))}
-                    className="text-right py-1 text-xs font-mono font-medium"
-                  />
+                  <div className="relative flex items-center w-full">
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="0.00"
+                      value={bill.discount === 0 ? '' : bill.discount}
+                      onChange={(e) => dispatch(discountChanged(Number(e.target.value) || 0))}
+                      className="w-full text-right px-2 py-1 text-xs font-mono font-medium"
+                    />
+                  </div>
                 )}
               </div>
             </div>
