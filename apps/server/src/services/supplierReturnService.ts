@@ -6,7 +6,7 @@ export async function listSupplierReturns(supplierId?: string) {
   const where: any = {};
   if (supplierId) where.supplierId = supplierId;
 
-  return prisma.supplierReturn.findMany({
+  const returns = await prisma.supplierReturn.findMany({
     where,
     include: {
       supplier: true,
@@ -15,6 +15,14 @@ export async function listSupplierReturns(supplierId?: string) {
     },
     orderBy: { createdAt: 'desc' },
   });
+
+  return returns.map((r: any) => ({
+    ...r,
+    refundOrCreditAmount:
+      r.refundOrCreditAmount != null
+        ? Number(r.refundOrCreditAmount)
+        : Number(r.product?.costPrice || 0) * r.quantity,
+  }));
 }
 
 export async function createSupplierReturn(input: SupplierReturnInput, employeeId: string) {
@@ -29,14 +37,21 @@ export async function createSupplierReturn(input: SupplierReturnInput, employeeI
   if (!supplier) throw new HttpError(404, 'Supplier not found');
 
   return prisma.$transaction(async (tx) => {
+    // Determine return credit amount (user specified or based on cost price * qty)
+    const refundAmount =
+      input.refundOrCreditAmount !== undefined && input.refundOrCreditAmount !== null
+        ? Number(input.refundOrCreditAmount)
+        : Number(product.costPrice) * input.quantity;
+
     // 1. Create the return record
-    const supplierReturn = await tx.supplierReturn.create({
+    const supplierReturn = await (tx.supplierReturn as any).create({
       data: {
         supplierId: input.supplierId,
         productId: input.productId,
         serializedItemId: input.serializedItemId || null,
         quantity: input.quantity,
         reason: input.reason,
+        refundOrCreditAmount: refundAmount,
         notes: input.notes || null,
       },
       include: {
@@ -71,15 +86,14 @@ export async function createSupplierReturn(input: SupplierReturnInput, employeeI
       },
     });
 
-    // 5. Adjust supplier payable (return credit based on cost price)
-    const refundAmount = Number(product.costPrice) * input.quantity;
+    // 5. Adjust supplier payable (return credit)
     await tx.supplierTransaction.create({
       data: {
         supplierId: input.supplierId,
         type: 'RETURN_CREDIT',
         amount: refundAmount,
         reference: `RET-${supplierReturn.id.slice(-6)}`,
-        notes: `Stock return for ${product.name} (${input.quantity}x) - Reason: ${input.reason}`,
+        notes: `Stock return for ${product.name} (${input.quantity}x) - Reason: ${input.reason}${input.notes ? ` - ${input.notes}` : ''}`,
       },
     });
 
@@ -94,6 +108,9 @@ export async function createSupplierReturn(input: SupplierReturnInput, employeeI
       },
     });
 
-    return supplierReturn;
+    return {
+      ...supplierReturn,
+      refundOrCreditAmount: refundAmount,
+    };
   });
 }

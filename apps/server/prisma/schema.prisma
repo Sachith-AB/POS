@@ -335,14 +335,15 @@ model SupplierTransaction {
 }
 
 model SupplierReturn {
-  id               String               @id @default(cuid())
-  supplierId       String
-  productId        String
-  serializedItemId String?
-  quantity         Int
-  reason           SupplierReturnReason
-  notes            String?
-  createdAt        DateTime             @default(now())
+  id                   String               @id @default(cuid())
+  supplierId           String
+  productId            String
+  serializedItemId     String?
+  quantity             Int
+  reason               SupplierReturnReason
+  refundOrCreditAmount Decimal?             @db.Decimal(12, 2)
+  notes                String?
+  createdAt            DateTime             @default(now())
 
   supplier       Supplier        @relation(fields: [supplierId], references: [id])
   product        Product         @relation(fields: [productId], references: [id])

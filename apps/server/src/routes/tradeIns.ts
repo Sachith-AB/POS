@@ -39,19 +39,47 @@ router.post(
 );
 
 const convertSchema = z.object({
-  name: z.string().min(1),
-  sellPrice: z.number().positive(),
+  name: z.string().optional(),
+  sellPrice: z.number().positive().optional(),
+  resaleSellPrice: z.number().positive().optional(),
   wholesalePrice: z.number().positive().optional(),
   category: z.string().optional(),
+  sku: z.string().optional(),
+  barcode: z.string().optional(),
 });
+
+async function handleConvert(req: any, res: any) {
+  const input = convertSchema.parse(req.body);
+  const sellPrice = input.sellPrice || input.resaleSellPrice;
+  if (!sellPrice || sellPrice <= 0) {
+    res.status(400).json({ error: 'Valid sell price or resale sell price is required' });
+    return;
+  }
+  const result = await convertTradeInToInventory(
+    req.params.id,
+    {
+      name: input.name || '',
+      sellPrice,
+      wholesalePrice: input.wholesalePrice,
+      category: input.category,
+      sku: input.sku,
+      barcode: input.barcode,
+    },
+    req.session!.employeeId
+  );
+  res.status(201).json(result);
+}
 
 router.post(
   '/:id/convert-to-stock',
   requireAuth,
-  asyncHandler(async (req, res) => {
-    const input = convertSchema.parse(req.body);
-    res.status(201).json(await convertTradeInToInventory(req.params.id, input, req.session!.employeeId));
-  })
+  asyncHandler(handleConvert)
+);
+
+router.post(
+  '/:id/convert-resale',
+  requireAuth,
+  asyncHandler(handleConvert)
 );
 
 export default router;

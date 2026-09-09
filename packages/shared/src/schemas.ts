@@ -301,6 +301,7 @@ export const supplierReturnSchema = z.object({
   quantity: z.number().int().positive(),
   reason: z.enum(SUPPLIER_RETURN_REASONS),
   serializedItemId: z.string().nullable().optional(),
+  refundOrCreditAmount: z.number().nonnegative().nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
 });
 export type SupplierReturnInput = z.infer<typeof supplierReturnSchema>;

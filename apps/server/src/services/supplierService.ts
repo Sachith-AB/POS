@@ -37,13 +37,25 @@ export async function getSupplier(id: string) {
       stockMovements: {
         include: { product: true },
         orderBy: { createdAt: 'desc' },
-        take: 20,
+        take: 50,
       },
     },
   });
 
   if (!supplier) throw new HttpError(404, 'Supplier not found');
-  return supplier;
+
+  const returnsWithCredit = supplier.returns.map((r: any) => ({
+    ...r,
+    refundOrCreditAmount:
+      r.refundOrCreditAmount != null
+        ? Number(r.refundOrCreditAmount)
+        : Number(r.product?.costPrice || 0) * r.quantity,
+  }));
+
+  return {
+    ...supplier,
+    returns: returnsWithCredit,
+  };
 }
 
 export async function createSupplier(input: SupplierInput) {
