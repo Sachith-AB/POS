@@ -285,6 +285,7 @@ export function PosPage() {
               saleId: null,
               items: lastCompleted.items.map((i) => ({ ...i })),
               customerPhone: '',
+              customerId: null,
               customerName: lastCompleted.customerName,
               discount: lastCompleted.discount,
               discountPercent: 0,
