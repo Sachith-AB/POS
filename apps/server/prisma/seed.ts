@@ -4,6 +4,25 @@ import bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 async function main() {
+  // Seed System Owner
+  const ownerPin = '123456';
+  const owner = await prisma.employee.upsert({
+    where: { id: 'seed-owner' },
+    create: {
+      id: 'seed-owner',
+      name: 'System Owner',
+      role: 'OWNER',
+      pinHash: await bcrypt.hash(ownerPin, 10),
+    },
+    update: {
+      name: 'System Owner',
+      role: 'OWNER',
+      pinHash: await bcrypt.hash(ownerPin, 10),
+      active: true,
+    },
+  });
+  console.log(`System Owner ready: ${owner.name} (login PIN: ${ownerPin})`);
+
   // Seed Technician Employee
   const techPin = '654321';
   const technician = await prisma.employee.upsert({
