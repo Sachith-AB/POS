@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiTrash2, FiShield, FiRepeat, FiPercent, FiDollarSign } from 'react-icons/fi';
+import { FiTrash2, FiShield, FiRepeat, FiPercent, FiDollarSign, FiUser, FiAlertTriangle } from 'react-icons/fi';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
 import { api, ApiError } from '../lib/api';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
@@ -284,9 +284,10 @@ export function PosPage() {
             bill: {
               saleId: null,
               items: lastCompleted.items.map((i) => ({ ...i })),
-              customerPhone: '',
+              customerPhone: lastCompleted.customerPhone || '',
               customerId: null,
               customerName: lastCompleted.customerName,
+              customerDetails: null,
               discount: lastCompleted.discount,
               discountPercent: 0,
               warrantyPeriodId: null,
@@ -392,6 +393,37 @@ export function PosPage() {
             className="w-full text-base py-2.5"
           />
           {notFound ? <p className="text-amber-500 text-sm font-medium">{notFound}</p> : null}
+
+          {/* Linked Customer Header in Bill */}
+          {bill.customerDetails || bill.customerName ? (
+            <div className="flex items-center justify-between px-3.5 py-2 bg-emerald-500/10 border border-emerald-500/25 rounded-xl text-xs animate-in fade-in duration-150">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-300">
+                  <FiUser className="h-3.5 w-3.5" />
+                  <span>Customer: {bill.customerName || bill.customerDetails?.name || 'Registered Customer'}</span>
+                </div>
+                {bill.customerPhone ? (
+                  <span className="font-mono text-ink text-[11px]">({bill.customerPhone})</span>
+                ) : null}
+                {bill.customerDetails?.nic ? (
+                  <span className="text-muted font-mono text-[11px]">&bull; NIC: {bill.customerDetails.nic}</span>
+                ) : null}
+                {bill.customerDetails?.categories?.map((c) => (
+                  <span
+                    key={c.category.id}
+                    className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-600 text-white shadow-xs"
+                  >
+                    {c.category.emoji ? `${c.category.emoji} ` : ''}{c.category.name}
+                  </span>
+                ))}
+              </div>
+              {bill.customerDetails?.address ? (
+                <span className="text-muted text-[11px] truncate max-w-[220px]" title={bill.customerDetails.address}>
+                  {bill.customerDetails.address}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Cart Table with Price Types, Editable Price, and Per-Item Warranty */}
           <div className="flex-1 overflow-y-auto rounded-xl border border-border bg-surface shadow-xs">
@@ -551,7 +583,18 @@ export function PosPage() {
 
         {/* Right Checkout Panel */}
         <div className="flex flex-col rounded-2xl border border-border bg-surface p-5 shadow-xs">
-          <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-1">Customer Details</p>
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-xs font-semibold text-muted uppercase tracking-wider">Customer Details</p>
+            {bill.customerPhone ? (
+              <button
+                type="button"
+                onClick={() => dispatch(customerPhoneChanged(''))}
+                className="text-[11px] text-muted hover:text-rose-500 cursor-pointer transition-colors"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
           <Input
             placeholder="Customer Phone (07XXXXXXXX)"
             value={bill.customerPhone}
@@ -897,6 +940,16 @@ export function PosPage() {
             <div className="text-center mb-4">
               <h2 className="text-lg font-bold text-ink">Sale Completed Successfully!</h2>
               <p className="text-xs text-muted font-medium">Receipt has been printed. Total: Rs {lastCompleted.total.toFixed(2)}</p>
+
+              {lastCompleted.customerName || lastCompleted.customerPhone ? (
+                <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs font-semibold border border-emerald-500/20">
+                  <FiUser className="h-3.5 w-3.5" />
+                  <span>Customer: {lastCompleted.customerName || 'Registered Customer'}</span>
+                  {lastCompleted.customerPhone ? (
+                    <span className="font-mono text-ink">({lastCompleted.customerPhone})</span>
+                  ) : null}
+                </div>
+              ) : null}
 
               {lastCompleted.changeAmount && lastCompleted.changeAmount > 0 ? (
                 <div className="mt-3 p-3.5 rounded-xl bg-emerald-500/15 border-2 border-emerald-500 text-center">

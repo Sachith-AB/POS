@@ -18,7 +18,7 @@ import {
   savingStarted,
   completingStarted,
 } from './posSlice';
-import type { BillSlot, CartLine } from './posTypes';
+import type { BillSlot, CartLine, CustomerMatchedData } from './posTypes';
 
 function toItemsInput(items: CartLine[]) {
   return items.map((i) => ({
@@ -71,15 +71,15 @@ function* autosaveWorker() {
   }
 }
 
-function* customerLookupWorker() {
+function* customerLookupWorker(action?: ReturnType<typeof customerPhoneChanged>) {
   const state: RootState = yield select();
-  const phone = state.pos.bills[state.pos.activeIndex].customerPhone;
-  if (phone.length < 7) {
+  const phone = (action?.payload ?? state.pos.bills[state.pos.activeIndex]?.customerPhone ?? '').trim();
+  if (phone.length < 3) {
     yield put(customerMatched(null));
     return;
   }
   try {
-    const customer: { id: string; name: string | null } | null = yield call(
+    const customer: CustomerMatchedData | null = yield call(
       api.get,
       `/customers/lookup?phone=${encodeURIComponent(phone)}`
     );
@@ -109,6 +109,9 @@ function* completeWorker(action: ReturnType<typeof saleCompleteRequested>) {
         discount: bill.discount,
         total: Number(result.total),
         customerName: bill.customerName,
+        customerPhone: bill.customerPhone || bill.customerDetails?.phone || null,
+        customerAddress: bill.customerDetails?.address || null,
+        customerNic: bill.customerDetails?.nic || null,
         completedAt: new Date().toISOString(),
         tenderedAmount: action.payload.tenderedAmount,
         changeAmount: action.payload.changeAmount,
@@ -139,6 +142,7 @@ const AUTOSAVE_TRIGGERS = [
   discountPercentChanged.type,
   warrantySelected.type,
   tradeInApplied.type,
+  customerMatched.type,
 ];
 
 export default function* posSaga() {

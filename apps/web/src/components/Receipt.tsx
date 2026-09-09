@@ -23,7 +23,28 @@ export function Receipt() {
       ) : null}
       <h3 className="text-center text-sm font-bold">{settings?.companyName ?? 'Shop'}</h3>
       <p className="my-0.5 text-center">{new Date(receipt.completedAt).toLocaleString()}</p>
-      {receipt.customerName ? <p className="my-0.5 text-center">Customer: {receipt.customerName}</p> : null}
+      {receipt.customerName || receipt.customerPhone ? (
+        <div className="my-1 border-y border-dashed border-black/60 py-1 text-[11px] leading-tight text-left">
+          {receipt.customerName ? (
+            <div className="flex justify-between">
+              <span className="font-semibold">Customer:</span>
+              <span className="font-bold">{receipt.customerName}</span>
+            </div>
+          ) : null}
+          {receipt.customerPhone ? (
+            <div className="flex justify-between">
+              <span>Phone:</span>
+              <span>{receipt.customerPhone}</span>
+            </div>
+          ) : null}
+          {receipt.customerAddress ? (
+            <div className="flex justify-between">
+              <span>Address:</span>
+              <span className="text-right max-w-[48mm] truncate">{receipt.customerAddress}</span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <hr className="my-1 border-black" />
       {receipt.items.map((item) => (
         <div key={item.productId} className="my-0.5 flex justify-between">

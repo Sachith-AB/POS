@@ -1,7 +1,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import { MAX_PARKED_BILLS } from '@pos/shared';
 import { loggedOut } from '../auth/authSlice';
-import { type BillSlot, type CartLine, emptyBillSlot } from './posTypes';
+import { type BillSlot, type CartLine, type CustomerMatchedData, emptyBillSlot } from './posTypes';
 
 export interface PosState {
   bills: BillSlot[];
@@ -21,6 +21,9 @@ export interface ReceiptSnapshot {
   discount: number;
   total: number;
   customerName: string | null;
+  customerPhone?: string | null;
+  customerAddress?: string | null;
+  customerNic?: string | null;
   completedAt: string;
   tenderedAmount?: number;
   changeAmount?: number;
@@ -134,12 +137,19 @@ const posSlice = createSlice({
       bill.tradeInValue = action.payload.tradeInValue;
     },
     customerPhoneChanged(state, action: PayloadAction<string>) {
-      state.bills[state.activeIndex].customerPhone = action.payload;
+      const bill = state.bills[state.activeIndex];
+      bill.customerPhone = action.payload;
+      if (!action.payload.trim()) {
+        bill.customerId = null;
+        bill.customerName = null;
+        bill.customerDetails = null;
+      }
     },
-    customerMatched(state, action: PayloadAction<{ id: string; name: string | null } | null>) {
+    customerMatched(state, action: PayloadAction<CustomerMatchedData | null>) {
       const bill = state.bills[state.activeIndex];
       bill.customerId = action.payload?.id ?? null;
       bill.customerName = action.payload?.name ?? null;
+      bill.customerDetails = action.payload ?? null;
     },
     activeBillSwitched(state, action: PayloadAction<number>) {
       state.activeIndex = action.payload;
