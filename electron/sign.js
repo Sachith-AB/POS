@@ -1,4 +1,5 @@
-exports.default = async function () {
-  // Custom sign handler bypasses winCodeSign download & symlink extraction
+module.exports = async function () {
+  // Custom sign handler bypasses code signing
   return true;
 };
+module.exports.default = module.exports;
