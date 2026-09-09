@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiX, FiCheck, FiArrowRight, FiPackage } from 'react-icons/fi';
 import { IoNotificationsOutline } from "react-icons/io5";
-import { toast } from 'react-toastify';
 import { api } from '../lib/api';
 import type { Product } from '../features/products/productsSlice';
 
@@ -27,9 +26,6 @@ export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-
-  // Track product IDs that we have already alerted via toast popup during this session
-  const alertedIdsRef = useRef<Set<string>>(new Set());
 
   const checkLowStock = useCallback(async () => {
     try {
@@ -57,20 +53,6 @@ export function NotificationBell() {
       if (unreadCount > 0) {
         setHasUnread(true);
       }
-
-      // Check if any product is newly low stock and hasn't been toasted in this session
-      items.forEach((p) => {
-        const notifKey = `${p.id}-${p.quantity}`;
-        if (!alertedIdsRef.current.has(notifKey)) {
-          alertedIdsRef.current.add(notifKey);
-          if (!seenSet.has(notifKey)) {
-            toast.warning(
-              `⚠️ Low Stock Alert: "${p.name}" has only ${p.quantity} left (Threshold: ${p.lowStockThreshold})`,
-              { autoClose: 5000, toastId: `low-stock-${p.id}` }
-            );
-          }
-        }
-      });
 
       setNotifications(notifs);
     } catch {
