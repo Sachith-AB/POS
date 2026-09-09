@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { FiMenu, FiX } from 'react-icons/fi';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
 import { Button } from './Button';
+import { NotificationBell } from './NotificationBell';
 import { logoutRequested } from '../features/auth/authSlice';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -24,13 +25,16 @@ export function AppHeader() {
           <span className="text-base font-bold">{settings?.companyName ?? 'POS'}</span>
         </div>
         {employee ? (
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="p-1.5 rounded-lg border border-border text-ink hover:bg-canvas sm:hidden cursor-pointer focus:outline-none"
-            aria-label="Toggle menu"
-          >
-            {isOpen ? <FiX className="h-5 w-5" /> : <FiMenu className="h-5 w-5" />}
-          </button>
+          <div className="flex items-center gap-2 sm:hidden">
+            <NotificationBell />
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="p-1.5 rounded-lg border border-border text-ink hover:bg-canvas cursor-pointer focus:outline-none"
+              aria-label="Toggle menu"
+            >
+              {isOpen ? <FiX className="h-5 w-5" /> : <FiMenu className="h-5 w-5" />}
+            </button>
+          </div>
         ) : null}
       </div>
 
@@ -70,6 +74,11 @@ export function AppHeader() {
           ) : null}
 
           <div className="border-t border-border my-1 sm:hidden" />
+
+          {/* Notification Bell (Desktop) */}
+          <div className="hidden sm:flex items-center">
+            <NotificationBell />
+          </div>
 
           <span className="px-2.5 py-1.5 text-sm text-muted block sm:inline">
             {employee.name} ({employee.role})
