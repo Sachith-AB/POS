@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiTrash2, FiShield, FiRepeat, FiPercent, FiDollarSign } from 'react-icons/fi';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
@@ -62,6 +62,8 @@ export function PosPage() {
   const [method, setMethod] = useState<'CASH' | 'CARD' | 'BANK_TRANSFER'>('CASH');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('percent');
+  const [applyDiscount, setApplyDiscount] = useState(false);
+  const discountInputRef = useRef<HTMLInputElement>(null);
 
   // Warranties & Trade-in state
   const [warranties, setWarranties] = useState<WarrantyOption[]>([]);
@@ -78,6 +80,23 @@ export function PosPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);
 
+  const toggleDiscount = useCallback(() => {
+    setApplyDiscount((prev) => {
+      const next = !prev;
+      if (!next) {
+        dispatch(discountChanged(0));
+        dispatch(discountPercentChanged(0));
+      } else {
+        const defaultPct = settings?.defaultDiscountPercent ? Number(settings.defaultDiscountPercent) : 10;
+        if (discountMode === 'percent') {
+          dispatch(discountPercentChanged(defaultPct));
+        }
+        setTimeout(() => discountInputRef.current?.focus(), 50);
+      }
+      return next;
+    });
+  }, [dispatch, settings?.defaultDiscountPercent, discountMode]);
+
   useEffect(() => {
     searchRef.current?.focus();
     dispatch(quickButtonsRequested());
@@ -93,15 +112,27 @@ export function PosPage() {
       .catch(() => {});
   }, [dispatch]);
 
-  // Set default discount percent when bill is empty and settings are loaded (Q2)
+  // Sync applyDiscount state when switching bills
   useEffect(() => {
-    if (bill.items.length > 0 && bill.discount === 0 && bill.discountPercent === 0 && settings?.defaultDiscountPercent) {
-      const defaultPct = Number(settings.defaultDiscountPercent);
-      if (defaultPct > 0) {
-        dispatch(discountPercentChanged(defaultPct));
+    if (bill.discount > 0 || (bill.discountPercent ?? 0) > 0) {
+      setApplyDiscount(true);
+    } else {
+      setApplyDiscount(false);
+    }
+  }, [activeIndex]);
+
+  // Keyboard shortcut: Press Shift + D to toggle discount checkbox (click to enable, click again to uncheck)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        toggleDiscount();
       }
     }
-  }, [bill.items.length, settings?.defaultDiscountPercent, dispatch]);
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleDiscount]);
 
   // Clean up completed sale snapshot on unmount
   useEffect(() => {
@@ -465,46 +496,70 @@ export function PosPage() {
               <span className="font-mono font-medium">Rs {subtotal.toFixed(2)}</span>
             </div>
 
-            {/* Discount with % and Flat toggle (Q2: default 10% configurable) */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1">
-                <span className="text-muted text-xs">Discount</span>
-                <button
-                  type="button"
-                  onClick={() => setDiscountMode(discountMode === 'percent' ? 'amount' : 'percent')}
-                  className="p-1 rounded bg-canvas border border-border text-[10px] font-semibold text-muted hover:text-ink cursor-pointer"
-                  title="Toggle % or Flat Rs"
+            {/* Discount with small checkbox and hotkey (D) */}
+            <div className="flex items-center justify-between gap-2 min-h-[28px]">
+              <label className="flex items-center gap-1.5 cursor-pointer text-xs select-none">
+                <input
+                  type="checkbox"
+                  checked={applyDiscount}
+                  onChange={toggleDiscount}
+                  className="rounded border-border text-primary cursor-pointer h-3.5 w-3.5"
+                />
+                <span className={applyDiscount ? 'font-semibold text-ink' : 'text-muted'}>
+                  Discount
+                </span>
+                <kbd
+                  className="text-[9px] font-mono px-1 py-0.5 rounded bg-canvas border border-border text-muted leading-none"
+                  title="Press Shift + D to toggle discount"
                 >
-                  {discountMode === 'percent' ? <FiPercent className="h-2.5 w-2.5" /> : <FiDollarSign className="h-2.5 w-2.5" />}
-                </button>
-              </div>
-              <div className="w-28 shrink-0">
-                {discountMode === 'percent' ? (
-                  <div className="relative flex items-center w-full">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      placeholder="10"
-                      value={bill.discountPercent || ''}
-                      onChange={(e) => dispatch(discountPercentChanged(Number(e.target.value) || 0))}
-                      className="w-full text-right pr-6 py-1 text-xs font-mono font-medium"
-                    />
-                    <span className="absolute right-2 text-xs text-muted pointer-events-none">%</span>
-                  </div>
-                ) : (
-                  <div className="relative flex items-center w-full">
-                    <Input
-                      type="number"
-                      min={0}
-                      placeholder="0.00"
-                      value={bill.discount === 0 ? '' : bill.discount}
-                      onChange={(e) => dispatch(discountChanged(Number(e.target.value) || 0))}
-                      className="w-full text-right px-2 py-1 text-xs font-mono font-medium"
-                    />
-                  </div>
-                )}
-              </div>
+                  Shift+D
+                </kbd>
+                {applyDiscount ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setDiscountMode(discountMode === 'percent' ? 'amount' : 'percent');
+                    }}
+                    className="ml-1 p-1 rounded bg-canvas border border-border text-[10px] font-semibold text-muted hover:text-ink cursor-pointer"
+                    title="Toggle % or Flat Rs"
+                  >
+                    {discountMode === 'percent' ? <FiPercent className="h-2.5 w-2.5" /> : <FiDollarSign className="h-2.5 w-2.5" />}
+                  </button>
+                ) : null}
+              </label>
+
+              {applyDiscount ? (
+                <div className="w-28 shrink-0">
+                  {discountMode === 'percent' ? (
+                    <div className="relative flex items-center w-full">
+                      <Input
+                        ref={discountInputRef}
+                        type="number"
+                        min={0}
+                        max={100}
+                        placeholder="10"
+                        value={bill.discountPercent || ''}
+                        onChange={(e) => dispatch(discountPercentChanged(Number(e.target.value) || 0))}
+                        className="w-full text-right pr-6 py-1 text-xs font-mono font-medium"
+                      />
+                      <span className="absolute right-2 text-xs text-muted pointer-events-none">%</span>
+                    </div>
+                  ) : (
+                    <div className="relative flex items-center w-full">
+                      <Input
+                        ref={discountInputRef}
+                        type="number"
+                        min={0}
+                        placeholder="0.00"
+                        value={bill.discount === 0 ? '' : bill.discount}
+                        onChange={(e) => dispatch(discountChanged(Number(e.target.value) || 0))}
+                        className="w-full text-right px-2 py-1 text-xs font-mono font-medium"
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
 
             {tradeInDeduction > 0 ? (
