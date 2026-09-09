@@ -21,6 +21,8 @@ export interface ReceiptSnapshot {
   total: number;
   customerName: string | null;
   completedAt: string;
+  tenderedAmount?: number;
+  changeAmount?: number;
 }
 
 
@@ -160,7 +162,10 @@ const posSlice = createSlice({
     savingFinished(state) {
       state.saving = false;
     },
-    saleCompleteRequested(_state, _action: PayloadAction<{ amount: number; method: string }>) {},
+    saleCompleteRequested(
+      _state,
+      _action: PayloadAction<{ amount: number; method: string; tenderedAmount?: number; changeAmount?: number }>
+    ) {},
     completingStarted(state) {
       state.completing = true;
       state.error = null;

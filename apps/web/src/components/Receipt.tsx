@@ -46,6 +46,18 @@ export function Receipt() {
         <span>Total</span>
         <span>{receipt.total.toFixed(2)}</span>
       </div>
+      {receipt.tenderedAmount && receipt.tenderedAmount > receipt.total ? (
+        <>
+          <div className="my-0.5 flex justify-between">
+            <span>Cash Tendered</span>
+            <span>{receipt.tenderedAmount.toFixed(2)}</span>
+          </div>
+          <div className="my-0.5 flex justify-between font-bold">
+            <span>Change / Balance</span>
+            <span>{(receipt.changeAmount ?? (receipt.tenderedAmount - receipt.total)).toFixed(2)}</span>
+          </div>
+        </>
+      ) : null}
       <p className="mt-2 text-center">Thank you!</p>
     </div>
   );

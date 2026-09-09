@@ -100,7 +100,7 @@ function* completeWorker(action: ReturnType<typeof saleCompleteRequested>) {
     const result: { id: string; total: string | number } = yield call(
       api.post,
       `/sales/${saleId}/complete`,
-      action.payload
+      { amount: action.payload.amount, method: action.payload.method }
     );
     yield put(
       saleCompleted({
@@ -110,6 +110,8 @@ function* completeWorker(action: ReturnType<typeof saleCompleteRequested>) {
         total: Number(result.total),
         customerName: bill.customerName,
         completedAt: new Date().toISOString(),
+        tenderedAmount: action.payload.tenderedAmount,
+        changeAmount: action.payload.changeAmount,
       })
     );
 

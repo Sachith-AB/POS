@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiTrash2, FiShield, FiRepeat, FiPercent, FiDollarSign } from 'react-icons/fi';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
@@ -191,6 +191,23 @@ export function PosPage() {
   const tradeInDeduction = bill.tradeInValue || 0;
   const total = Math.max(0, subtotal - bill.discount - tradeInDeduction);
 
+  const tenderedNum = amount !== '' ? Number(amount) : 0;
+  const changeAmount = Math.max(0, Math.round((tenderedNum - total) * 100) / 100);
+
+  const quickCashOptions = useMemo(() => {
+    if (total <= 0) return [];
+    const standardBills = [500, 1000, 2000, 5000];
+    const higherBills = standardBills.filter((b) => b > total);
+    if (higherBills.length > 0) {
+      return higherBills.slice(0, 3);
+    }
+    const nextThousand = Math.ceil(total / 1000) * 1000;
+    const nextFiveThousand = Math.ceil(total / 5000) * 5000;
+    return [nextThousand !== total ? nextThousand : total + 1000, nextFiveThousand].filter(
+      (v, i, arr) => v > total && arr.indexOf(v) === i
+    );
+  }, [total]);
+
   function addProduct(product: Product) {
     if (priceCheckMode) {
       setNotFound(`${product.name}: Rs ${Number(product.sellPrice).toFixed(2)}`);
@@ -233,8 +250,17 @@ export function PosPage() {
   }
 
   function handleComplete() {
-    const parsed = amount ? Number(amount) : total;
-    dispatch(saleCompleteRequested({ amount: parsed, method }));
+    const tenderedVal = amount ? Number(amount) : total;
+    const changeVal = Math.max(0, Math.round((tenderedVal - total) * 100) / 100);
+    const paymentAmount = Math.min(tenderedVal, total);
+    dispatch(
+      saleCompleteRequested({
+        amount: paymentAmount,
+        method,
+        tenderedAmount: tenderedVal,
+        changeAmount: changeVal,
+      })
+    );
   }
 
   useEffect(() => {
@@ -645,6 +671,97 @@ export function PosPage() {
             ))}
           </div>
 
+          {/* Amount Paid / Cash Tendered & Auto-Calculated Balance */}
+          <div className="mb-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="tendered-amount-input" className="text-xs font-semibold text-muted uppercase tracking-wider">
+                Amount Paid (F2)
+              </label>
+              {total > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setAmount(total.toString())}
+                  className="text-[11px] font-semibold text-primary hover:underline cursor-pointer"
+                >
+                  Exact (Rs {total.toFixed(0)})
+                </button>
+              )}
+            </div>
+
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted pointer-events-none">
+                Rs
+              </span>
+              <Input
+                id="tendered-amount-input"
+                ref={amountRef}
+                type="number"
+                min={0}
+                step="any"
+                value={amount}
+                placeholder={total > 0 ? total.toFixed(2) : '0.00'}
+                onChange={(e) => setAmount(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleComplete();
+                  }
+                }}
+                className="pl-9 pr-3 py-2 text-sm font-mono font-semibold"
+              />
+            </div>
+
+            {/* Quick Cash Suggestions */}
+            {quickCashOptions.length > 0 && (
+              <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
+                <span className="text-[10px] text-muted font-medium uppercase">Quick:</span>
+                {quickCashOptions.map((cashVal) => (
+                  <button
+                    key={cashVal}
+                    type="button"
+                    onClick={() => setAmount(cashVal.toString())}
+                    className="px-2 py-0.5 text-xs font-mono font-medium rounded-lg border border-border bg-canvas hover:bg-surface hover:border-ink transition-colors cursor-pointer"
+                  >
+                    Rs {cashVal.toLocaleString()}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Live Auto-Calculated Balance / Change Feedback */}
+            {amount !== '' && !isNaN(tenderedNum) && (
+              <div className="pt-1">
+                {tenderedNum > total ? (
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border-2 border-emerald-500 text-emerald-950 dark:text-emerald-200 flex justify-between items-center shadow-xs">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-700 dark:text-emerald-400 block">
+                        Balance to Return
+                      </span>
+                      <span className="text-[11px] text-emerald-800/80 dark:text-emerald-300">
+                        Paid Rs {tenderedNum.toLocaleString()} - Total Rs {total.toLocaleString()}
+                      </span>
+                    </div>
+                    <span className="font-mono text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
+                      Rs {changeAmount.toFixed(2)}
+                    </span>
+                  </div>
+                ) : tenderedNum === total ? (
+                  <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-400 text-blue-900 dark:text-blue-300 flex justify-between items-center text-xs">
+                    <span>Exact Payment Received</span>
+                    <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">Rs 0.00 Balance</span>
+                  </div>
+                ) : tenderedNum > 0 ? (
+                  <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-400 text-amber-900 dark:text-amber-300 flex justify-between items-center text-xs">
+                    <span>Underpaid / Balance Due</span>
+                    <span className="font-mono font-bold text-amber-600 dark:text-amber-400">
+                      Rs {(total - tenderedNum).toFixed(2)}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+
           <Button
             onClick={handleComplete}
             loading={completing}
@@ -720,6 +837,21 @@ export function PosPage() {
             <div className="text-center mb-4">
               <h2 className="text-lg font-bold text-ink">Sale Completed Successfully!</h2>
               <p className="text-xs text-muted font-medium">Receipt has been printed. Total: Rs {lastCompleted.total.toFixed(2)}</p>
+
+              {lastCompleted.changeAmount && lastCompleted.changeAmount > 0 ? (
+                <div className="mt-3 p-3.5 rounded-xl bg-emerald-500/15 border-2 border-emerald-500 text-center">
+                  <div className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                    Balance / Change to Return
+                  </div>
+                  <div className="text-3xl font-mono font-extrabold text-emerald-600 dark:text-emerald-400 my-1">
+                    Rs {lastCompleted.changeAmount.toFixed(2)}
+                  </div>
+                  <div className="text-xs text-muted">
+                    Customer Paid: <span className="font-mono font-semibold text-ink">Rs {(lastCompleted.tenderedAmount ?? (lastCompleted.total + lastCompleted.changeAmount)).toFixed(2)}</span>
+                    {' '}&bull; Bill Total: <span className="font-mono font-semibold text-ink">Rs {lastCompleted.total.toFixed(2)}</span>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             {/* Installment Plan Breakdown Toggle (Dev Critical #4) */}
