@@ -11,6 +11,7 @@ export interface PosState {
   completing: boolean;
   lastRemoved: { billIndex: number; line: CartLine } | null;
   lastCompleted: ReceiptSnapshot | null;
+  lastCompletedBill: { billIndex: number; bill: BillSlot; total: number; saleId: string } | null;
   error: string | null;
 }
 
@@ -34,6 +35,7 @@ const initialState: PosState = {
   completing: false,
   lastRemoved: null,
   lastCompleted: null,
+  lastCompletedBill: null,
   error: null,
 };
 
@@ -173,11 +175,34 @@ const posSlice = createSlice({
     saleCompleted(state, action: PayloadAction<ReceiptSnapshot>) {
       state.completing = false;
       state.lastCompleted = action.payload;
+      state.lastCompletedBill = {
+        billIndex: state.activeIndex,
+        bill: {
+          ...state.bills[state.activeIndex],
+          items: state.bills[state.activeIndex].items.map((i) => ({ ...i })),
+        },
+        total: action.payload.total,
+        saleId: action.payload.id,
+      };
       state.bills[state.activeIndex] = emptyBillSlot();
     },
     saleCompleteFailed(state, action: PayloadAction<string>) {
       state.completing = false;
       state.error = action.payload;
+    },
+    saleUndone(state) {
+      if (!state.lastCompletedBill) return;
+      const { billIndex, bill } = state.lastCompletedBill;
+      state.bills[billIndex] = {
+        ...bill,
+        saleId: null,
+      };
+      state.activeIndex = billIndex;
+      state.lastCompleted = null;
+      state.lastCompletedBill = null;
+    },
+    lastCompletedBillCleared(state) {
+      state.lastCompletedBill = null;
     },
     lastCompletedCleared(state) {
       state.lastCompleted = null;
@@ -216,6 +241,8 @@ export const {
   completingStarted,
   saleCompleted,
   saleCompleteFailed,
+  saleUndone,
+  lastCompletedBillCleared,
   lastCompletedCleared,
   cartAutosaveRequested,
 } = posSlice.actions;

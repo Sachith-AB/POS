@@ -258,7 +258,37 @@ export async function completeSale(saleId: string, employeeId: string, paymentAm
 
 export async function voidSale(saleId: string, employeeId: string) {
   const sale = await getSale(saleId);
-  const voided = await prisma.sale.update({ where: { id: saleId }, data: { status: 'VOID' } });
+  if (sale.status === 'VOID') {
+    return sale;
+  }
+  const voided = await prisma.$transaction(async (tx) => {
+    if (sale.status === 'COMPLETED') {
+      for (const item of sale.items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { quantity: { increment: item.quantity } },
+        });
+        await tx.stockMovement.create({
+          data: {
+            productId: item.productId,
+            type: 'RETURN',
+            quantityDelta: item.quantity,
+            employeeId,
+          },
+        });
+        await tx.serializedItem.updateMany({
+          where: { soldInSaleItemId: item.id },
+          data: { status: 'IN_STOCK', soldInSaleItemId: null },
+        });
+      }
+      await tx.tradeIn.updateMany({
+        where: { saleId },
+        data: { status: 'PENDING', saleId: null },
+      });
+    }
+    return tx.sale.update({ where: { id: saleId }, data: { status: 'VOID' } });
+  });
+
   await recordAudit({
     employeeId,
     action: 'VOID_SALE',

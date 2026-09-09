@@ -11,6 +11,7 @@ import { Button } from '../components/Button';
 import type { Product } from '../features/products/productsSlice';
 import {
   activeBillSwitched,
+  billResumed,
   customerPhoneChanged,
   discountChanged,
   discountPercentChanged,
@@ -23,6 +24,8 @@ import {
   lastRemovedCleared,
   priceCheckToggled,
   saleCompleteRequested,
+  saleUndone,
+  lastCompletedBillCleared,
   lastCompletedCleared,
   warrantySelected,
   tradeInApplied,
@@ -47,7 +50,7 @@ interface TradeInItem {
 export function PosPage() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
-  const { bills, activeIndex, priceCheckMode, saving, completing, lastRemoved, error } = useAppSelector(
+  const { bills, activeIndex, priceCheckMode, saving, completing, lastRemoved, lastCompletedBill, error } = useAppSelector(
     (s) => s.pos
   );
   const quickButtons = useAppSelector((s) => s.products.quickButtons);
@@ -61,6 +64,8 @@ export function PosPage() {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<'CASH' | 'CARD' | 'BANK_TRANSFER'>('CASH');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showSaleUndoToast, setShowSaleUndoToast] = useState(false);
+  const [undoingSale, setUndoingSale] = useState(false);
   const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('percent');
   const [applyDiscount, setApplyDiscount] = useState(false);
   const discountInputRef = useRef<HTMLInputElement>(null);
@@ -263,12 +268,55 @@ export function PosPage() {
     );
   }
 
+  async function handleUndoSale() {
+    const saleId = lastCompletedBill?.saleId || lastCompleted?.id;
+    if (!saleId) return;
+    setUndoingSale(true);
+    try {
+      await api.post(`/sales/${saleId}/void`);
+      if (lastCompletedBill) {
+        dispatch(saleUndone());
+      } else if (lastCompleted) {
+        dispatch(
+          billResumed({
+            billIndex: activeIndex,
+            bill: {
+              saleId: null,
+              items: lastCompleted.items.map((i) => ({ ...i })),
+              customerPhone: '',
+              customerName: lastCompleted.customerName,
+              discount: lastCompleted.discount,
+              discountPercent: 0,
+              warrantyPeriodId: null,
+              tradeInId: null,
+              tradeInValue: 0,
+            },
+          })
+        );
+        dispatch(lastCompletedCleared());
+      }
+      setShowSaleUndoToast(false);
+      setShowSuccessModal(false);
+      setTimeout(() => {
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }, 50);
+    } catch (err: unknown) {
+      console.error('Failed to undo sale', err);
+      const msg = err instanceof Error ? err.message : 'Failed to undo sale';
+      alert(msg);
+    } finally {
+      setUndoingSale(false);
+    }
+  }
+
   useEffect(() => {
     if (lastCompleted && printedRef.current !== lastCompleted.completedAt) {
       printedRef.current = lastCompleted.completedAt;
       setAmount('');
       window.print();
       setShowSuccessModal(true);
+      setShowSaleUndoToast(true);
 
       // Pre-calculate installment defaults for the modal preview (Dev Critical #4 & Q13)
       const defaultDownPct = settings?.defaultDownPaymentPercent ? Number(settings.defaultDownPaymentPercent) : 35;
@@ -828,6 +876,15 @@ export function PosPage() {
         />
       ) : null}
 
+      {showSaleUndoToast && (lastCompletedBill || lastCompleted) ? (
+        <UndoToast
+          message={`Sale completed (Rs ${(lastCompletedBill?.total ?? lastCompleted?.total ?? 0).toFixed(2)})`}
+          duration={8}
+          onUndo={handleUndoSale}
+          onExpire={() => setShowSaleUndoToast(false)}
+        />
+      ) : null}
+
       <Receipt />
 
       {/* Post-Sale Completion Modal with Inline Installment Breakdown (Dev Critical #4 & Q7, Q13) */}
@@ -969,6 +1026,15 @@ export function PosPage() {
                 className="w-full py-2 text-xs font-bold"
               >
                 New Sale (Press Enter)
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                loading={undoingSale}
+                onClick={handleUndoSale}
+                className="w-full py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
+              >
+                Undo Sale
               </Button>
             </div>
           </div>
