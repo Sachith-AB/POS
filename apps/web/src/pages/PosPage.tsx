@@ -79,6 +79,29 @@ export function PosPage() {
 
   const searchRef = useRef<HTMLInputElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);
+  const [lastAddedId, setLastAddedId] = useState<string | null>(null);
+  const qtyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const handleF1 = () => {
+    const active = document.activeElement;
+    const isQtyFocused = Object.values(qtyInputRefs.current).some((el) => el === active);
+
+    if (isQtyFocused) {
+      // Return to search input to choose / scan the next product in the current bill
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    } else if (bill.items.length > 0) {
+      // Jump to quantity of the chosen / last product and select all digits
+      const targetId = lastAddedId || bill.items[bill.items.length - 1].productId;
+      const el = qtyInputRefs.current[targetId] || qtyInputRefs.current[bill.items[bill.items.length - 1].productId];
+      if (el) {
+        el.focus();
+        el.select();
+      }
+    } else {
+      searchRef.current?.focus();
+    }
+  };
 
   const toggleDiscount = useCallback(() => {
     setApplyDiscount((prev) => {
@@ -185,6 +208,7 @@ export function PosPage() {
         priceType: 'RETAIL',
       })
     );
+    setLastAddedId(product.id);
   }
 
   async function handleEnter() {
@@ -231,7 +255,7 @@ export function PosPage() {
   }, [lastCompleted, settings]);
 
   useKeyboardShortcuts({
-    F1: () => searchRef.current?.focus(),
+    F1: handleF1,
     F2: () => amountRef.current?.focus(),
     F12: () => handleComplete(),
     Escape: () => {
@@ -304,7 +328,7 @@ export function PosPage() {
                 <div className="grid grid-cols-[1.5fr_100px_80px_110px_110px_36px] items-center gap-2 bg-canvas px-3 py-2 text-xs font-semibold text-muted uppercase">
                   <span>Product &amp; Warranty</span>
                   <span>Price Type</span>
-                  <span>Qty</span>
+                  <span>Qty (F1)</span>
                   <span>Unit Price (Rs)</span>
                   <span>Line Total (Rs)</span>
                   <span></span>
@@ -365,12 +389,37 @@ export function PosPage() {
 
                     {/* Quantity */}
                     <Input
+                      ref={(el) => {
+                        qtyInputRefs.current[item.productId] = el;
+                      }}
                       type="number"
                       min={1}
-                      value={item.quantity}
-                      onChange={(e) =>
-                        dispatch(lineQuantityChanged({ productId: item.productId, quantity: Number(e.target.value) }))
-                      }
+                      value={item.quantity === 0 ? '' : item.quantity}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onClick={(e) => e.currentTarget.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === 'F1') {
+                          e.preventDefault();
+                          searchRef.current?.focus();
+                          searchRef.current?.select();
+                        }
+                      }}
+                      onBlur={() => {
+                        if (!item.quantity || item.quantity < 1) {
+                          dispatch(lineQuantityChanged({ productId: item.productId, quantity: 1 }));
+                        }
+                      }}
+                      onChange={(e) => {
+                        const val = e.target.value.trim();
+                        if (val === '') {
+                          dispatch(lineQuantityChanged({ productId: item.productId, quantity: 0 }));
+                        } else {
+                          const parsed = parseInt(val, 10);
+                          if (!isNaN(parsed)) {
+                            dispatch(lineQuantityChanged({ productId: item.productId, quantity: Math.max(0, parsed) }));
+                          }
+                        }
+                      }}
                       className="text-center font-semibold text-sm py-1"
                     />
 

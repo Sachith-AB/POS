@@ -68,7 +68,7 @@ const posSlice = createSlice({
     lineQuantityChanged(state, action: PayloadAction<{ productId: string; quantity: number }>) {
       const bill = state.bills[state.activeIndex];
       const line = bill.items.find((i) => i.productId === action.payload.productId);
-      if (line) line.quantity = Math.max(1, action.payload.quantity);
+      if (line) line.quantity = Math.max(0, action.payload.quantity);
     },
     linePriceChanged(state, action: PayloadAction<{ productId: string; unitPrice: number }>) {
       const bill = state.bills[state.activeIndex];
