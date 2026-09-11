@@ -28,4 +28,15 @@ router.get(
   })
 );
 
+// Get barcode Data URL directly for seamless in-app sticker rendering & printing
+router.get(
+  '/barcode-dataurl/:code',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const png = await renderAgreementBarcodePng(req.params.code);
+    const dataUrl = `data:image/png;base64,${png.toString('base64')}`;
+    res.json({ dataUrl });
+  })
+);
+
 export default router;

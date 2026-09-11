@@ -274,8 +274,9 @@ export function PosCheckoutPanel({
       {/* Amount Paid / Cash Tendered & Balance Feedback */}
       <div className="mb-3 space-y-2">
         <div className="flex items-center justify-between">
-          <label htmlFor="tendered-amount-input" className="text-xs font-semibold text-muted uppercase tracking-wider">
-            Amount Paid (F2)
+          <label htmlFor="tendered-amount-input" className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-1">
+            <span>Amount Paid (F2)</span>
+            <span className="text-rose-500 font-bold" title="Required">*</span>
           </label>
           {total > 0 && (
             <button
@@ -299,7 +300,8 @@ export function PosCheckoutPanel({
             min={0}
             step="any"
             value={amount}
-            placeholder={total > 0 ? total.toFixed(2) : '0.00'}
+            placeholder="0.00 (Required)"
+            required
             onChange={(e) => onAmountChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -312,9 +314,18 @@ export function PosCheckoutPanel({
         </div>
 
         {/* Quick Cash Suggestions */}
-        {quickCashOptions.length > 0 && (
+        {(total > 0 || quickCashOptions.length > 0) && (
           <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
             <span className="text-[10px] text-muted font-medium uppercase">Quick:</span>
+            {total > 0 && (
+              <button
+                type="button"
+                onClick={() => onAmountChange(total.toFixed(2))}
+                className="px-2 py-0.5 text-xs font-mono font-medium rounded-lg border border-border bg-canvas hover:bg-surface hover:border-ink transition-colors cursor-pointer"
+              >
+                Exact (Rs {total.toFixed(2)})
+              </button>
+            )}
             {quickCashOptions.map((cashVal) => (
               <button
                 key={cashVal}
@@ -325,39 +336,6 @@ export function PosCheckoutPanel({
                 Rs {cashVal.toLocaleString()}
               </button>
             ))}
-          </div>
-        )}
-
-        {/* Live Auto-Calculated Balance / Change Feedback */}
-        {amount !== '' && !isNaN(tenderedNum) && (
-          <div className="pt-1">
-            {tenderedNum > total ? (
-              <div className="p-2.5 rounded-xl bg-emerald-500/10 border-2 border-emerald-500 text-emerald-950 dark:text-emerald-200 flex justify-between items-center shadow-xs">
-                <div>
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-700 dark:text-emerald-400 block">
-                    Balance to Return
-                  </span>
-                  <span className="text-[11px] text-emerald-800/80 dark:text-emerald-300">
-                    Paid Rs {tenderedNum.toLocaleString()} - Total Rs {total.toLocaleString()}
-                  </span>
-                </div>
-                <span className="font-mono text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
-                  Rs {changeAmount.toFixed(2)}
-                </span>
-              </div>
-            ) : tenderedNum === total ? (
-              <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-400 text-blue-900 dark:text-blue-300 flex justify-between items-center text-xs">
-                <span>Exact Payment Received</span>
-                <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">Rs 0.00 Balance</span>
-              </div>
-            ) : tenderedNum > 0 ? (
-              <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-400 text-amber-900 dark:text-amber-300 flex justify-between items-center text-xs">
-                <span>Underpaid / Balance Due</span>
-                <span className="font-mono font-bold text-amber-600 dark:text-amber-400">
-                  Rs {(total - tenderedNum).toFixed(2)}
-                </span>
-              </div>
-            ) : null}
           </div>
         )}
       </div>

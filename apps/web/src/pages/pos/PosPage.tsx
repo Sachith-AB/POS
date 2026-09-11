@@ -84,6 +84,10 @@ export function PosPage() {
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
   const qtyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
+  useEffect(() => {
+    setAmount('');
+  }, [activeIndex]);
+
   const handleF1 = () => {
     const active = document.activeElement;
     const isQtyFocused = Object.values(qtyInputRefs.current).some((el) => el === active);
@@ -354,7 +358,19 @@ export function PosPage() {
     }
   }
 
+  function handleMethodChange(m: 'CASH' | 'CARD' | 'BANK_TRANSFER') {
+    setMethod(m);
+    if ((m === 'CARD' || m === 'BANK_TRANSFER') && (!amount || Number(amount) === 0) && total > 0) {
+      setAmount(total.toFixed(2));
+    }
+  }
+
   function handleComplete() {
+    if (bill.items.length === 0) {
+      toast.warn('Please add products to the bill before completing the sale.');
+      return;
+    }
+
     if (hasMobileInBill && !hasCustomer) {
       toast.error('Customer details are mandatory when selling a mobile phone. Please enter customer phone or select a customer.');
       return;
@@ -366,9 +382,30 @@ export function PosPage() {
       return;
     }
 
-    const tenderedVal = amount ? Number(amount) : total;
+    if (!amount || !amount.trim()) {
+      toast.error('Amount paid is required to complete the sale. Please enter the amount paid (F2).');
+      amountRef.current?.focus();
+      amountRef.current?.select();
+      return;
+    }
+
+    const tenderedVal = Number(amount);
+    if (isNaN(tenderedVal) || tenderedVal <= 0) {
+      toast.error('Please enter a valid amount paid.');
+      amountRef.current?.focus();
+      amountRef.current?.select();
+      return;
+    }
+
+    if (tenderedVal < total) {
+      toast.error(`Amount paid (Rs ${tenderedVal.toFixed(2)}) is less than total payable amount (Rs ${total.toFixed(2)}).`);
+      amountRef.current?.focus();
+      amountRef.current?.select();
+      return;
+    }
+
     const changeVal = Math.max(0, Math.round((tenderedVal - total) * 100) / 100);
-    const paymentAmount = Math.min(tenderedVal, total);
+    const paymentAmount = total;
     dispatch(
       saleCompleteRequested({
         amount: paymentAmount,
@@ -584,7 +621,7 @@ export function PosPage() {
           onDiscountPercentChange={(val) => dispatch(discountPercentChanged(val))}
           onDiscountChange={(val) => dispatch(discountChanged(val))}
           method={method}
-          onMethodChange={setMethod}
+          onMethodChange={handleMethodChange}
           amount={amount}
           onAmountChange={setAmount}
           amountRef={amountRef}

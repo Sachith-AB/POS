@@ -16,6 +16,7 @@ import { Button } from '../components/Button';
 import { UndoToast } from '../components/UndoToast';
 import { PhotoCapture } from '../components/PhotoCapture';
 import { api } from '../lib/api';
+import { printHtmlViaIframe, generateAgreementStickerHtml } from '../lib/printUtils';
 
 const STATUS_COLORS: Record<string, string> = {
   ACTIVE: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
@@ -514,41 +515,32 @@ export function InstallmentsPage() {
     return nextUnpaid ? new Date(nextUnpaid.dueDate).toLocaleDateString() : 'N/A';
   };
 
-  function printAgreementSticker(plan: InstallmentPlan) {
-    const printWindow = window.open('', '_blank', 'width=400,height=300');
-    if (!printWindow) return;
+  async function printAgreementSticker(plan: InstallmentPlan) {
     const barcode = plan.agreementBarcode || `AGR-${plan.id.slice(-8).toUpperCase()}`;
     const custName = plan.sale?.customer?.name || 'Walk-in';
     const date = new Date(plan.createdAt).toLocaleDateString();
     const totalPay = Number(plan.totalPayable || plan.remainingBalance).toFixed(2);
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Agreement Sticker - ${barcode}</title>
-          <style>
-            body { font-family: monospace; padding: 12px; margin: 0; text-align: center; }
-            .badge { font-size: 11px; font-weight: bold; border-bottom: 1px dashed #000; padding-bottom: 4px; margin-bottom: 6px; }
-            .barcode-box { font-size: 18px; font-weight: 900; letter-spacing: 2px; margin: 8px 0; border: 2px solid #000; padding: 6px; display: inline-block; }
-            .details { font-size: 10px; text-align: left; margin-top: 6px; }
-          </style>
-        </head>
-        <body>
-          <div class="badge">PHYSICAL AGREEMENT STICKER</div>
-          <div class="barcode-box">*${barcode}*</div>
-          <div class="details">
-            <div><strong>Agreement:</strong> ${barcode}</div>
-            <div><strong>Customer:</strong> ${custName}</div>
-            <div><strong>Date:</strong> ${date}</div>
-            <div><strong>Total Credit:</strong> Rs ${totalPay}</div>
-          </div>
-          <script>
-            window.onload = function() { window.print(); window.close(); }
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    let barcodeDataUrl: string | undefined;
+    try {
+      const res = await api.get<{ dataUrl: string }>(`/agreements/barcode-dataurl/${encodeURIComponent(barcode)}`);
+      if (res?.dataUrl) {
+        barcodeDataUrl = res.dataUrl;
+      }
+    } catch (err) {
+      console.warn('Could not fetch agreement barcode image, falling back to text format', err);
+    }
+
+    const html = generateAgreementStickerHtml({
+      barcode,
+      customerName: custName,
+      date,
+      totalAmount: totalPay,
+      barcodeDataUrl,
+      companyName: settings?.companyName || 'AGREEMENT STICKER',
+    });
+
+    printHtmlViaIframe(html);
   }
 
   return (
