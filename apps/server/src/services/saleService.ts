@@ -208,6 +208,10 @@ export async function createSale(input: SaleCreateInput, employeeId: string) {
       where: { id: input.tradeInId },
       data: { saleId: sale.id, status: 'ADJUSTED' },
     });
+    return (await prisma.sale.findUnique({
+      where: { id: sale.id },
+      include: { items: { include: { warrantyPeriod: true } }, warrantyPeriod: true, tradeIns: true },
+    }))!;
   }
 
   return sale;
@@ -281,6 +285,10 @@ export async function updateSaleItems(
         where: { id: input.tradeInId },
         data: { saleId, status: 'ADJUSTED' },
       });
+      return (await tx.sale.findUnique({
+        where: { id: saleId },
+        include: { items: { include: { warrantyPeriod: true } }, warrantyPeriod: true, tradeIns: true },
+      }))!;
     }
 
     return updated;
@@ -321,6 +329,7 @@ export async function completeSale(saleId: string, employeeId: string, paymentAm
         payments: true,
         customer: true,
         warrantyPeriod: true,
+        tradeIns: true,
       },
     });
   });

@@ -698,8 +698,9 @@ export function PosPage() {
           warranties={warranties}
           onWarrantySelect={(id) => dispatch(warrantySelected(id))}
           tradeInDeduction={tradeInDeduction}
+          tradeInDevice={bill.tradeInDevice}
           onOpenTradeInModal={() => setShowTradeInModal(true)}
-          onRemoveTradeIn={() => dispatch(tradeInApplied({ tradeInId: null, tradeInValue: 0 }))}
+          onRemoveTradeIn={() => dispatch(tradeInApplied({ tradeInId: null, tradeInValue: 0, tradeInDevice: null }))}
           subtotal={subtotal}
           total={total}
           applyDiscount={applyDiscount}
@@ -757,7 +758,9 @@ export function PosPage() {
         isOpen={showTradeInModal}
         onClose={() => setShowTradeInModal(false)}
         tradeIns={tradeIns}
-        onApplyTradeIn={(tradeInId, tradeInValue) => dispatch(tradeInApplied({ tradeInId, tradeInValue }))}
+        onApplyTradeIn={(tradeInId, tradeInValue, tradeInDevice) =>
+          dispatch(tradeInApplied({ tradeInId, tradeInValue, tradeInDevice }))
+        }
       />
 
       {/* Undo Toast */}

@@ -42,7 +42,14 @@ router.post(
   })
 );
 
-const updateSchema = saleCreateSchema.pick({ items: true, discount: true, customerId: true });
+const updateSchema = saleCreateSchema.pick({
+  items: true,
+  discount: true,
+  discountPercent: true,
+  customerId: true,
+  warrantyPeriodId: true,
+  tradeInId: true,
+});
 
 router.patch(
   '/:id',

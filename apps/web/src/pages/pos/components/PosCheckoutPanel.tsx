@@ -17,6 +17,12 @@ interface PosCheckoutPanelProps {
   warranties: WarrantyOption[];
   onWarrantySelect: (id: string | null) => void;
   tradeInDeduction: number;
+  tradeInDevice?: {
+    deviceInfo: string;
+    imei?: string | null;
+    condition?: string;
+    tradeInValue: number;
+  } | null;
   onOpenTradeInModal: () => void;
   onRemoveTradeIn: () => void;
   subtotal: number;
@@ -60,6 +66,7 @@ export function PosCheckoutPanel({
   warranties,
   onWarrantySelect,
   tradeInDeduction,
+  tradeInDevice,
   onOpenTradeInModal,
   onRemoveTradeIn,
   subtotal,
@@ -205,9 +212,21 @@ export function PosCheckoutPanel({
           ) : null}
         </div>
         {tradeInDeduction > 0 ? (
-          <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-1">
-            - Rs {tradeInDeduction.toFixed(2)} credited
-          </p>
+          <div>
+            {tradeInDevice?.deviceInfo ? (
+              <p className="text-xs font-semibold text-ink truncate mt-1">
+                {tradeInDevice.deviceInfo}
+                {tradeInDevice.imei ? (
+                  <span className="text-[10px] text-muted font-normal ml-1">
+                    (IMEI: {tradeInDevice.imei})
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
+            <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">
+              - Rs {tradeInDeduction.toFixed(2)} credited
+            </p>
+          </div>
         ) : (
           <button
             type="button"

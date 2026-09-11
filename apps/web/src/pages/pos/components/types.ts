@@ -11,6 +11,7 @@ export interface TradeInItem {
   id: string;
   deviceInfo: string;
   imei: string | null;
+  condition?: string;
   tradeInValue: number | string;
   customerName: string | null;
 }

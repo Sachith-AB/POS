@@ -32,6 +32,14 @@ export interface CustomerMatchedData {
   categories?: Array<{ category: CustomerCategoryItem }>;
 }
 
+export interface TradeInDeviceDetails {
+  id?: string;
+  deviceInfo: string;
+  imei?: string | null;
+  condition?: string;
+  tradeInValue: number;
+}
+
 export interface BillSlot {
   saleId: string | null;
   items: CartLine[];
@@ -44,6 +52,7 @@ export interface BillSlot {
   warrantyPeriodId?: string | null;
   tradeInId?: string | null;
   tradeInValue?: number;
+  tradeInDevice?: TradeInDeviceDetails | null;
 }
 
 export function emptyBillSlot(): BillSlot {
@@ -59,6 +68,7 @@ export function emptyBillSlot(): BillSlot {
     warrantyPeriodId: null,
     tradeInId: null,
     tradeInValue: 0,
+    tradeInDevice: null,
   };
 }
 

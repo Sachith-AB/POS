@@ -1,7 +1,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import { MAX_PARKED_BILLS } from '@pos/shared';
 import { loggedOut } from '../auth/authSlice';
-import { type BillSlot, type CartLine, type CustomerMatchedData, emptyBillSlot } from './posTypes';
+import { type BillSlot, type CartLine, type CustomerMatchedData, type TradeInDeviceDetails, emptyBillSlot } from './posTypes';
 
 export interface PosState {
   bills: BillSlot[];
@@ -29,6 +29,8 @@ export interface ReceiptSnapshot {
   completedAt: string;
   tenderedAmount?: number;
   changeAmount?: number;
+  tradeInDeduction?: number;
+  tradeInDevice?: TradeInDeviceDetails | null;
 }
 
 
@@ -179,10 +181,18 @@ const posSlice = createSlice({
     warrantySelected(state, action: PayloadAction<string | null>) {
       state.bills[state.activeIndex].warrantyPeriodId = action.payload;
     },
-    tradeInApplied(state, action: PayloadAction<{ tradeInId: string | null; tradeInValue: number }>) {
+    tradeInApplied(
+      state,
+      action: PayloadAction<{
+        tradeInId: string | null;
+        tradeInValue: number;
+        tradeInDevice?: TradeInDeviceDetails | null;
+      }>
+    ) {
       const bill = state.bills[state.activeIndex];
       bill.tradeInId = action.payload.tradeInId;
       bill.tradeInValue = action.payload.tradeInValue;
+      bill.tradeInDevice = action.payload.tradeInDevice ?? null;
     },
     customerSearchStarted(state) {
       state.customerSearching = true;

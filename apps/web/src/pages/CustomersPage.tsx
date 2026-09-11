@@ -705,6 +705,15 @@ export function CustomersPage() {
                               <span>Rs. {Number(item.lineTotal).toLocaleString()}</span>
                             </div>
                           ))}
+                          {(sale as any).tradeIns && (sale as any).tradeIns.length > 0 ? (
+                            <div className="border-t border-dashed border-border/60 pt-1 text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-between">
+                              <span>
+                                Trade-In Allowance: {(sale as any).tradeIns[0].deviceInfo}
+                                {(sale as any).tradeIns[0].imei ? ` (${(sale as any).tradeIns[0].imei})` : ''}
+                              </span>
+                              <span>-Rs. {Number((sale as any).tradeIns[0].tradeInValue).toLocaleString()}</span>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     ))

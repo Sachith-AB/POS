@@ -10,7 +10,11 @@ interface PosTradeInModalProps {
   isOpen: boolean;
   onClose: () => void;
   tradeIns: TradeInItem[];
-  onApplyTradeIn: (tradeInId: string, tradeInValue: number) => void;
+  onApplyTradeIn: (
+    tradeInId: string,
+    tradeInValue: number,
+    tradeInDevice?: { id?: string; deviceInfo: string; imei?: string | null; condition?: string; tradeInValue: number } | null
+  ) => void;
 }
 
 export function PosTradeInModal({
@@ -45,7 +49,13 @@ export function PosTradeInModal({
         customerPhone: customerPhone.trim() || undefined,
       });
       toast.success('Trade-in recorded and applied to bill!');
-      onApplyTradeIn(created.id, val);
+      onApplyTradeIn(created.id, val, {
+        id: created.id,
+        deviceInfo: created.deviceInfo,
+        imei: created.imei || null,
+        condition: created.condition,
+        tradeInValue: val,
+      });
       onClose();
     } catch (err: any) {
       toast.error(err.message || 'Failed to record trade-in device');
@@ -192,7 +202,13 @@ export function PosTradeInModal({
                   <div
                     key={t.id}
                     onClick={() => {
-                      onApplyTradeIn(t.id, Number(t.tradeInValue));
+                      onApplyTradeIn(t.id, Number(t.tradeInValue), {
+                        id: t.id,
+                        deviceInfo: t.deviceInfo,
+                        imei: t.imei || null,
+                        condition: t.condition,
+                        tradeInValue: Number(t.tradeInValue),
+                      });
                       onClose();
                     }}
                     className="p-3 rounded-xl border border-border bg-canvas hover:border-brand cursor-pointer transition-colors flex justify-between items-center"

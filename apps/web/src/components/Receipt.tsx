@@ -61,15 +61,47 @@ export function Receipt() {
           ) : null}
         </div>
       ))}
+
+      {/* Trade-In Device Details Section */}
+      {receipt.tradeInDevice || (receipt.tradeInDeduction && receipt.tradeInDeduction > 0) ? (
+        <div className="my-1.5 border-y border-dashed border-black/80 py-1 text-[11px] leading-tight text-left">
+          <div className="flex justify-between font-bold text-black uppercase tracking-wider text-[10px]">
+            <span>Trade-In Device:</span>
+            <span>-Rs {(receipt.tradeInDeduction || receipt.tradeInDevice?.tradeInValue || 0).toFixed(2)}</span>
+          </div>
+          <div className="font-semibold text-black mt-0.5">
+            {receipt.tradeInDevice?.deviceInfo || 'Customer Trade-In'}
+          </div>
+          {receipt.tradeInDevice?.imei ? (
+            <div className="text-[10px] font-mono text-black">
+              IMEI: {receipt.tradeInDevice.imei}
+            </div>
+          ) : null}
+          {receipt.tradeInDevice?.condition ? (
+            <div className="text-[10px] text-black">
+              Condition: {receipt.tradeInDevice.condition}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <hr className="my-1 border-black" />
       <div className="my-0.5 flex justify-between">
         <span>Subtotal</span>
         <span>{subtotal.toFixed(2)}</span>
       </div>
-      <div className="my-0.5 flex justify-between">
-        <span>Discount</span>
-        <span>-{receipt.discount.toFixed(2)}</span>
-      </div>
+      {receipt.discount > 0 ? (
+        <div className="my-0.5 flex justify-between">
+          <span>Discount</span>
+          <span>-{receipt.discount.toFixed(2)}</span>
+        </div>
+      ) : null}
+      {(receipt.tradeInDeduction && receipt.tradeInDeduction > 0) || receipt.tradeInDevice ? (
+        <div className="my-0.5 flex justify-between font-semibold">
+          <span>Trade-In Allowance</span>
+          <span>-{(receipt.tradeInDeduction || receipt.tradeInDevice?.tradeInValue || 0).toFixed(2)}</span>
+        </div>
+      ) : null}
       <div className="my-0.5 flex justify-between text-sm font-bold">
         <span>Total</span>
         <span>{receipt.total.toFixed(2)}</span>
