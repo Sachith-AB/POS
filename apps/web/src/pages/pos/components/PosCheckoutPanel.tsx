@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiCalendar, FiDollarSign, FiPercent, FiRepeat } from 'react-icons/fi';
+import { FiCalendar, FiDollarSign, FiPercent, FiRepeat, FiAlertCircle, FiUserPlus, FiCheckCircle } from 'react-icons/fi';
 import { Button } from '../../../components/Button';
 import { Input } from '../../../components/Input';
 import type { WarrantyOption } from './types';
@@ -7,7 +7,10 @@ import type { WarrantyOption } from './types';
 interface PosCheckoutPanelProps {
   customerPhone: string;
   customerName?: string | null;
+  customerSearching?: boolean;
+  customerSearched?: boolean;
   onCustomerPhoneChange: (phone: string) => void;
+  onOpenRegisterCustomer?: () => void;
   hasMobileInBill: boolean;
   mobileRequiresCustomer: boolean;
   warrantyPeriodId: string | null;
@@ -47,7 +50,10 @@ interface PosCheckoutPanelProps {
 export function PosCheckoutPanel({
   customerPhone,
   customerName,
+  customerSearching = false,
+  customerSearched = false,
   onCustomerPhoneChange,
+  onOpenRegisterCustomer,
   hasMobileInBill,
   mobileRequiresCustomer,
   warrantyPeriodId,
@@ -100,21 +106,64 @@ export function PosCheckoutPanel({
           </button>
         ) : null}
       </div>
-      <Input
-        placeholder="Customer Phone (07XXXXXXXX)"
-        value={customerPhone}
-        onChange={(e) => onCustomerPhoneChange(e.target.value)}
-        className={`w-full text-sm ${
-          mobileRequiresCustomer ? 'border-rose-400 focus:border-rose-500' : ''
-        }`}
-      />
+
+      <div className="relative">
+        <Input
+          placeholder="Customer Phone (07XXXXXXXX)"
+          value={customerPhone}
+          onChange={(e) => onCustomerPhoneChange(e.target.value)}
+          className={`w-full text-sm font-mono ${
+            mobileRequiresCustomer ? 'border-rose-400 focus:border-rose-500' : ''
+          }`}
+        />
+        {customerSearching ? (
+          <span className="absolute right-3 top-2.5 text-[11px] text-muted animate-pulse flex items-center gap-1">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
+            Searching...
+          </span>
+        ) : null}
+      </div>
+
       {hasMobileInBill && mobileRequiresCustomer ? (
         <p className="text-[11px] text-rose-500 mt-1 font-medium">
           * Customer details are required to sell mobile phones
         </p>
       ) : null}
+
+      {/* Customer Matched */}
       {customerName ? (
-        <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-1">{customerName}</p>
+        <div className="mt-1.5 flex items-center justify-between text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+          <span className="flex items-center gap-1.5 truncate">
+            <FiCheckCircle className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{customerName}</span>
+          </span>
+          <span className="text-[10px] font-normal text-muted bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 shrink-0">
+            Registered
+          </span>
+        </div>
+      ) : null}
+
+      {/* Customer Not Registered Prompt */}
+      {!customerName && customerSearched && !customerSearching && customerPhone.trim().length >= 7 ? (
+        <div className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/10 dark:bg-amber-500/5 p-2.5 text-xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-1.5 font-semibold text-amber-700 dark:text-amber-400">
+            <FiAlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>Customer not registered</span>
+          </div>
+          <p className="text-[11px] text-muted mt-1 leading-snug">
+            No record found for <span className="font-mono font-medium text-ink">{customerPhone}</span>.
+          </p>
+          {onOpenRegisterCustomer ? (
+            <button
+              type="button"
+              onClick={onOpenRegisterCustomer}
+              className="mt-2 w-full py-1.5 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            >
+              <FiUserPlus className="h-3.5 w-3.5" />
+              Register Customer
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       <hr className="my-3 border-border" />

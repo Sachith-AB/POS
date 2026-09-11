@@ -28,6 +28,14 @@ export function InstallmentPlansTable({
   onPageChange,
 }: InstallmentPlansTableProps) {
   const getNextDueDate = (plan: InstallmentPlan) => {
+    if (plan.status === 'COMPLETE' || Number(plan.remainingBalance) === 0) {
+      const schedule = parseSchedule(plan.scheduleJson);
+      const lastPaid = [...schedule].reverse().find((s) => s.paid && s.paidAt);
+      const closedDate = lastPaid?.paidAt
+        ? new Date(lastPaid.paidAt).toLocaleDateString()
+        : new Date(plan.updatedAt || plan.createdAt).toLocaleDateString();
+      return `Closed (${closedDate})`;
+    }
     const schedule = parseSchedule(plan.scheduleJson);
     const nextUnpaid = schedule.find((s) => !s.paid);
     return nextUnpaid ? new Date(nextUnpaid.dueDate).toLocaleDateString() : 'N/A';

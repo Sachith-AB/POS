@@ -52,6 +52,9 @@ export interface ScheduleItem {
   amount: number;
   paid: boolean;
   paidAmount?: number;
+  paidAt?: string | null;
+  earlySettlement?: boolean;
+  lateFee?: number;
 }
 
 export interface AgreementProductItem {

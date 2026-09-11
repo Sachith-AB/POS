@@ -26,6 +26,9 @@ export async function listInstallmentPlans(filters: {
         sale: {
           include: {
             customer: true,
+            payments: {
+              orderBy: { createdAt: 'desc' },
+            },
           },
         },
       },
@@ -247,45 +250,68 @@ export async function recordInstallmentPayment(
   }
 
   const plan = await getInstallmentPlan(planId);
-  if (plan.status === 'COMPLETE') {
-    throw new HttpError(400, 'This installment plan is already fully paid');
+  if (plan.status === 'COMPLETE' || Number(plan.remainingBalance) <= 0) {
+    throw new HttpError(400, 'This installment plan is already fully paid and closed');
   }
 
-  const newBalance = Math.max(0, Number(plan.remainingBalance) - amount);
+  const currentBalance = Number(plan.remainingBalance);
+  // Cap payment at current balance
+  const paymentAmount = Math.min(amount, currentBalance);
+  const newBalance = Math.max(0, Math.round((currentBalance - paymentAmount) * 100) / 100);
   const isFullyPaid = newBalance === 0;
+  const paymentDate = new Date().toISOString();
 
   // Process schedule updates
   const schedule = Array.isArray(plan.scheduleJson)
     ? [...plan.scheduleJson]
     : JSON.parse(plan.scheduleJson as string);
 
-  let amountLeft = amount;
-  for (const inst of schedule) {
+  let amountLeft = paymentAmount;
+  for (let i = 0; i < schedule.length; i++) {
+    const inst = schedule[i];
     if (!inst.paid && amountLeft > 0) {
       const remainingOnInst = (inst.amount + (inst.lateFee || 0)) - (inst.paidAmount || 0);
-      if (amountLeft >= remainingOnInst) {
+      if (amountLeft >= remainingOnInst - 0.01) {
         inst.paid = true;
-        inst.paidAt = new Date().toISOString();
+        inst.paidAt = paymentDate;
         inst.paidAmount = inst.amount + (inst.lateFee || 0);
-        amountLeft -= remainingOnInst;
+        amountLeft = Math.max(0, amountLeft - remainingOnInst);
       } else {
-        inst.paidAmount = (inst.paidAmount || 0) + amountLeft;
+        inst.paidAmount = Math.round(((inst.paidAmount || 0) + amountLeft) * 100) / 100;
         amountLeft = 0;
       }
     }
   }
 
+  // If the plan is fully paid early, close and mark all remaining installments as early settlement on this date
+  if (isFullyPaid) {
+    for (const inst of schedule) {
+      if (!inst.paid) {
+        inst.paid = true;
+        inst.paidAt = paymentDate;
+        inst.paidAmount = inst.amount + (inst.lateFee || 0);
+        inst.earlySettlement = true;
+      }
+    }
+  }
+
   return prisma.$transaction(async (tx) => {
-    // Record payment against the sale
+    // 1. Record payment against the sale record so it is permanently reflected in the sale
     await tx.payment.create({
       data: {
         saleId: plan.saleId,
-        amount,
+        amount: paymentAmount,
         method: method as any,
       },
     });
 
-    // Update plan details
+    // 2. Ensure sale status is COMPLETED
+    await tx.sale.update({
+      where: { id: plan.saleId },
+      data: { status: 'COMPLETED' },
+    });
+
+    // 3. Update installment plan details
     const updated = await tx.installmentPlan.update({
       where: { id: plan.id },
       data: {
@@ -297,7 +323,14 @@ export async function recordInstallmentPayment(
         sale: {
           include: {
             customer: true,
-            payments: true,
+            payments: {
+              orderBy: { createdAt: 'desc' },
+            },
+            items: {
+              include: {
+                product: true,
+              },
+            },
           },
         },
       },

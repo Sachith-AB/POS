@@ -6,6 +6,9 @@ import {
   billSaleIdAssigned,
   customerMatched,
   customerPhoneChanged,
+  customerSearchStarted,
+  customerSearchFinished,
+  customerLookupReset,
   discountChanged,
   itemScanned,
   lineQuantityChanged,
@@ -76,9 +79,10 @@ function* customerLookupWorker(action?: ReturnType<typeof customerPhoneChanged>)
   const state: RootState = yield select();
   const phone = (action?.payload ?? state.pos.bills[state.pos.activeIndex]?.customerPhone ?? '').trim();
   if (phone.length < 3) {
-    yield put(customerMatched(null));
+    yield put(customerLookupReset());
     return;
   }
+  yield put(customerSearchStarted());
   try {
     const customer: CustomerMatchedData | null = yield call(
       api.get,
@@ -87,6 +91,8 @@ function* customerLookupWorker(action?: ReturnType<typeof customerPhoneChanged>)
     yield put(customerMatched(customer));
   } catch {
     yield put(customerMatched(null));
+  } finally {
+    yield put(customerSearchFinished());
   }
 }
 

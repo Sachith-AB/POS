@@ -14,7 +14,9 @@ import {
   billCleared,
   billResumed,
   billSaleIdAssigned,
+  customerMatched,
   customerPhoneChanged,
+  cartAutosaveRequested,
   discountChanged,
   discountPercentChanged,
   itemScanned,
@@ -43,6 +45,7 @@ import { PosCheckoutPanel } from './components/PosCheckoutPanel';
 import { PosImeiModal } from './components/PosImeiModal';
 import { PosTradeInModal } from './components/PosTradeInModal';
 import { PosSuccessModal } from './components/PosSuccessModal';
+import { PosCustomerRegisterModal } from './components/PosCustomerRegisterModal';
 
 export function PosPage() {
   const dispatch = useAppDispatch();
@@ -50,9 +53,18 @@ export function PosPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const isMobileTab = searchParams.get('tab') === 'mobile';
 
-  const { bills, activeIndex, priceCheckMode, saving, completing, lastRemoved, lastCompletedBill, error } = useAppSelector(
-    (s) => s.pos
-  );
+  const {
+    bills,
+    activeIndex,
+    priceCheckMode,
+    saving,
+    completing,
+    customerSearching,
+    customerSearched,
+    lastRemoved,
+    lastCompletedBill,
+    error,
+  } = useAppSelector((s) => s.pos);
   const quickButtons = useAppSelector((s) => s.products.quickButtons);
   const settings = useAppSelector((s) => s.settings.data);
   const lastCompleted = useAppSelector((s) => s.pos.lastCompleted);
@@ -80,6 +92,7 @@ export function PosPage() {
   const [warranties, setWarranties] = useState<WarrantyOption[]>([]);
   const [tradeIns, setTradeIns] = useState<TradeInItem[]>([]);
   const [showTradeInModal, setShowTradeInModal] = useState(false);
+  const [showCustomerRegisterModal, setShowCustomerRegisterModal] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);
@@ -675,7 +688,10 @@ export function PosPage() {
         <PosCheckoutPanel
           customerPhone={bill.customerPhone}
           customerName={bill.customerName}
+          customerSearching={customerSearching}
+          customerSearched={customerSearched}
           onCustomerPhoneChange={(phone) => dispatch(customerPhoneChanged(phone))}
+          onOpenRegisterCustomer={() => setShowCustomerRegisterModal(true)}
           hasMobileInBill={hasMobileInBill}
           mobileRequiresCustomer={mobileRequiresCustomer}
           warrantyPeriodId={bill.warrantyPeriodId ?? null}
@@ -715,6 +731,18 @@ export function PosPage() {
           startingInstallment={startingInstallment}
         />
       </div>
+
+      {/* Customer Registration Modal */}
+      <PosCustomerRegisterModal
+        isOpen={showCustomerRegisterModal}
+        onClose={() => setShowCustomerRegisterModal(false)}
+        initialPhone={bill.customerPhone}
+        onSuccess={(customer) => {
+          dispatch(customerPhoneChanged(customer.phone));
+          dispatch(customerMatched(customer));
+          dispatch(cartAutosaveRequested());
+        }}
+      />
 
       {/* IMEI Selection Modal */}
       <PosImeiModal

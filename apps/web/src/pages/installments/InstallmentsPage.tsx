@@ -464,23 +464,43 @@ export function InstallmentsPage() {
     e.preventDefault();
     if (!selectedPlan || !payAmount) return;
 
+    const enteredAmount = parseFloat(payAmount);
+    if (isNaN(enteredAmount) || enteredAmount <= 0) return;
+
+    const currentBal = Number(selectedPlan.remainingBalance);
+    const remainingAfter = Math.max(0, Math.round((currentBal - enteredAmount) * 100) / 100);
     const previousAmount = payAmount;
     const previousMethod = payMethod;
 
     dispatch(
       paymentRecordRequested({
         planId: selectedPlan.id,
-        amount: parseFloat(payAmount),
+        amount: enteredAmount,
         method: payMethod,
       })
     );
 
     setPayAmount('');
 
-    triggerUndoToast(`Installment payment of Rs ${parseFloat(previousAmount).toFixed(2)} recorded`, () => {
-      setPayAmount(previousAmount);
-      setPayMethod(previousMethod);
-    });
+    if (remainingAfter === 0) {
+      toast.success(
+        `🎉 Full remaining balance paid! Agreement is now FULLY SETTLED & CLOSED on ${new Date().toLocaleDateString()}. Balance: Rs 0.00`
+      );
+    } else {
+      toast.info(
+        `Payment of Rs ${enteredAmount.toFixed(2)} recorded. Balance still remaining to be paid: Rs ${remainingAfter.toFixed(2)}`
+      );
+    }
+
+    triggerUndoToast(
+      remainingAfter === 0
+        ? `Payment of Rs ${enteredAmount.toFixed(2)} recorded (Full Settlement). Balance: Rs 0.00`
+        : `Payment of Rs ${enteredAmount.toFixed(2)} recorded. Balance Remaining: Rs ${remainingAfter.toFixed(2)}`,
+      () => {
+        setPayAmount(previousAmount);
+        setPayMethod(previousMethod);
+      }
+    );
   }
 
   async function printAgreementSticker(plan: InstallmentPlan) {

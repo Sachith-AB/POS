@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   FiSearch,
   FiUserPlus,
@@ -54,6 +55,7 @@ export function CustomersPage() {
     filters,
   } = useAppSelector((s) => s.customers);
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState(filters.search);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerListItem | null>(null);
@@ -149,6 +151,24 @@ export function CustomersPage() {
     setFormCategoryIds([]);
     setIsEditModalOpen(true);
   };
+
+  useEffect(() => {
+    const registerParam = searchParams.get('register');
+    const phoneParam = searchParams.get('phone');
+    if (registerParam === 'true') {
+      setEditingCustomer(null);
+      setFormPhone(phoneParam || '');
+      setFormName('');
+      setFormNic('');
+      setFormAddress('');
+      setFormNotes('');
+      setFormIsBlocked(false);
+      setFormIsSuspended(false);
+      setFormCategoryIds([]);
+      setIsEditModalOpen(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const openEditModal = (c: CustomerListItem) => {
     setEditingCustomer(c);

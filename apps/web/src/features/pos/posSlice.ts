@@ -9,6 +9,8 @@ export interface PosState {
   priceCheckMode: boolean;
   saving: boolean;
   completing: boolean;
+  customerSearching: boolean;
+  customerSearched: boolean;
   lastRemoved: { billIndex: number; line: CartLine } | null;
   lastCompleted: ReceiptSnapshot | null;
   lastCompletedBill: { billIndex: number; bill: BillSlot; total: number; saleId: string } | null;
@@ -36,6 +38,8 @@ const initialState: PosState = {
   priceCheckMode: false,
   saving: false,
   completing: false,
+  customerSearching: false,
+  customerSearched: false,
   lastRemoved: null,
   lastCompleted: null,
   lastCompletedBill: null,
@@ -180,13 +184,29 @@ const posSlice = createSlice({
       bill.tradeInId = action.payload.tradeInId;
       bill.tradeInValue = action.payload.tradeInValue;
     },
+    customerSearchStarted(state) {
+      state.customerSearching = true;
+    },
+    customerSearchFinished(state) {
+      state.customerSearching = false;
+    },
+    customerLookupReset(state) {
+      const bill = state.bills[state.activeIndex];
+      bill.customerId = null;
+      bill.customerName = null;
+      bill.customerDetails = null;
+      state.customerSearching = false;
+      state.customerSearched = false;
+    },
     customerPhoneChanged(state, action: PayloadAction<string>) {
       const bill = state.bills[state.activeIndex];
       bill.customerPhone = action.payload;
+      state.customerSearched = false;
       if (!action.payload.trim()) {
         bill.customerId = null;
         bill.customerName = null;
         bill.customerDetails = null;
+        state.customerSearching = false;
       }
     },
     customerMatched(state, action: PayloadAction<CustomerMatchedData | null>) {
@@ -194,15 +214,25 @@ const posSlice = createSlice({
       bill.customerId = action.payload?.id ?? null;
       bill.customerName = action.payload?.name ?? null;
       bill.customerDetails = action.payload ?? null;
+      state.customerSearching = false;
+      state.customerSearched = true;
     },
     activeBillSwitched(state, action: PayloadAction<number>) {
       state.activeIndex = action.payload;
+      state.customerSearching = false;
+      state.customerSearched = Boolean(
+        state.bills[action.payload]?.customerPhone && !state.bills[action.payload]?.customerId
+      );
     },
     billSaleIdAssigned(state, action: PayloadAction<{ billIndex: number; saleId: string }>) {
       state.bills[action.payload.billIndex].saleId = action.payload.saleId;
     },
     billCleared(state, action: PayloadAction<number>) {
       state.bills[action.payload] = emptyBillSlot();
+      if (state.activeIndex === action.payload) {
+        state.customerSearching = false;
+        state.customerSearched = false;
+      }
     },
     billResumed(state, action: PayloadAction<{ billIndex: number; bill: BillSlot }>) {
       state.bills[action.payload.billIndex] = action.payload.bill;
@@ -284,6 +314,9 @@ export const {
   discountPercentChanged,
   warrantySelected,
   tradeInApplied,
+  customerSearchStarted,
+  customerSearchFinished,
+  customerLookupReset,
   customerPhoneChanged,
   customerMatched,
   activeBillSwitched,
