@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiDollarSign, FiPercent, FiRepeat } from 'react-icons/fi';
+import { FiCalendar, FiDollarSign, FiPercent, FiRepeat } from 'react-icons/fi';
 import { Button } from '../../../components/Button';
 import { Input } from '../../../components/Input';
 import type { WarrantyOption } from './types';
@@ -39,6 +39,9 @@ interface PosCheckoutPanelProps {
   completing: boolean;
   saving: boolean;
   error?: string | null;
+  posError?: string | null;
+  onStartInstallment?: () => void;
+  startingInstallment?: boolean;
 }
 
 export function PosCheckoutPanel({
@@ -76,6 +79,9 @@ export function PosCheckoutPanel({
   completing,
   saving,
   error,
+  posError,
+  onStartInstallment,
+  startingInstallment,
 }: PosCheckoutPanelProps) {
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-surface p-5 shadow-xs">
@@ -278,15 +284,6 @@ export function PosCheckoutPanel({
             <span>Amount Paid (F2)</span>
             <span className="text-rose-500 font-bold" title="Required">*</span>
           </label>
-          {total > 0 && (
-            <button
-              type="button"
-              onClick={() => onAmountChange(total.toString())}
-              className="text-[11px] font-semibold text-primary hover:underline cursor-pointer"
-            >
-              Exact (Rs {total.toFixed(0)})
-            </button>
-          )}
         </div>
 
         <div className="relative">
@@ -313,6 +310,10 @@ export function PosCheckoutPanel({
           />
         </div>
 
+        {posError && (
+          <p className="text-[11px] text-rose-500 mt-1 font-medium">{posError}</p>
+        )}
+
         {/* Quick Cash Suggestions */}
         {(total > 0 || quickCashOptions.length > 0) && (
           <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
@@ -323,7 +324,7 @@ export function PosCheckoutPanel({
                 onClick={() => onAmountChange(total.toFixed(2))}
                 className="px-2 py-0.5 text-xs font-mono font-medium rounded-lg border border-border bg-canvas hover:bg-surface hover:border-ink transition-colors cursor-pointer"
               >
-                Exact (Rs {total.toFixed(2)})
+                {total.toFixed(2)}
               </button>
             )}
             {quickCashOptions.map((cashVal) => (
@@ -340,17 +341,34 @@ export function PosCheckoutPanel({
         )}
       </div>
 
-      <Button
-        onClick={onComplete}
-        loading={completing}
-        disabled={mobileRequiresCustomer}
-        className={`w-full py-3 text-sm font-bold shadow-md rounded-xl transition-all ${
-          mobileRequiresCustomer ? 'opacity-60 cursor-not-allowed bg-muted hover:bg-muted text-canvas' : ''
-        }`}
-        title={mobileRequiresCustomer ? 'Customer details are mandatory for mobile phone sales' : undefined}
-      >
-        {mobileRequiresCustomer ? 'Customer Required for Mobile Sale' : 'Complete & Print (F12)'}
-      </Button>
+      <div className="space-y-2">
+        <Button
+          onClick={onComplete}
+          loading={completing}
+          disabled={mobileRequiresCustomer || startingInstallment}
+          className={`w-full py-3 text-sm font-bold shadow-md rounded-xl transition-all ${
+            mobileRequiresCustomer ? 'opacity-60 cursor-not-allowed bg-muted hover:bg-muted text-canvas' : ''
+          }`}
+          title={mobileRequiresCustomer ? 'Customer details are mandatory for mobile phone sales' : undefined}
+        >
+          {mobileRequiresCustomer ? 'Customer Required for Mobile Sale' : 'Complete & Print (F12)'}
+        </Button>
+
+        {onStartInstallment && (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onStartInstallment}
+            loading={startingInstallment}
+            disabled={total <= 0 || completing}
+            className="w-full py-2.5 text-xs font-bold rounded-xl border border-border bg-surface hover:bg-canvas text-ink transition-all flex items-center justify-center gap-1.5"
+            title="Buy the selected products with an installment plan"
+          >
+            <FiCalendar className="h-3.5 w-3.5 text-primary" />
+            <span>Buy with Installment Plan</span>
+          </Button>
+        )}
+      </div>
 
       <p className="min-h-[1.25em] text-xs text-muted text-center mt-2">
         {saving ? 'Saving changes…' : ''}

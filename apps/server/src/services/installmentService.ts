@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import type { InstallmentPlanCreateInput } from '@pos/shared';
+import { decrementStockForSale } from './stockService.js';
 import { generateAgreementCode } from './agreementBarcodeService.js';
 import { executeDefaultActionsForOverduePlan } from './defaultActionService.js';
 
@@ -64,11 +65,13 @@ export async function getInstallmentPlan(id: string) {
 export async function createInstallmentPlan(input: InstallmentPlanCreateInput) {
   const sale = await prisma.sale.findUnique({
     where: { id: input.saleId },
-    include: { payments: true },
+    include: { payments: true, items: true },
   });
 
   if (!sale) throw new HttpError(404, 'Sale not found');
-  if (sale.status !== 'COMPLETED') throw new HttpError(400, 'Sale must be completed before starting installment plan');
+  if (sale.status !== 'COMPLETED' && sale.status !== 'PARKED') {
+    throw new HttpError(400, 'Sale must be completed or parked before starting installment plan');
+  }
 
   // Verify that an installment plan doesn't already exist for this sale
   const existing = await prisma.installmentPlan.findUnique({ where: { saleId: input.saleId } });
@@ -77,6 +80,52 @@ export async function createInstallmentPlan(input: InstallmentPlanCreateInput) {
   const principal = Number(sale.total) - Number(input.downPayment);
   if (principal <= 0) {
     throw new HttpError(400, 'Down payment covers the entire bill. Installment plan not required.');
+  }
+
+  // Validate required Guarantor Information
+  if (!input.guarantorName || !input.guarantorName.trim()) {
+    throw new HttpError(400, 'Guarantor Name is required');
+  }
+  if (!input.guarantorPhone || !input.guarantorPhone.trim()) {
+    throw new HttpError(400, 'Guarantor Phone is required');
+  }
+  if (!input.guarantorNic || !input.guarantorNic.trim()) {
+    throw new HttpError(400, 'Guarantor NIC is required');
+  }
+  if (!input.guarantorAddress || !input.guarantorAddress.trim()) {
+    throw new HttpError(400, 'Guarantor Address is required');
+  }
+  if (!input.guarantorConsentGiven) {
+    throw new HttpError(400, 'Guarantor consent must be acknowledged');
+  }
+
+  // If sale was PARKED from POS, finalize it: decrement stock, record down payment, and mark COMPLETED
+  if (sale.status === 'PARKED') {
+    await prisma.$transaction(async (tx) => {
+      for (const item of sale.items) {
+        await decrementStockForSale(
+          tx,
+          item.productId,
+          item.quantity,
+          sale.employeeId,
+          item.id,
+          item.serializedItemId
+        );
+      }
+      if (Number(input.downPayment) > 0) {
+        await tx.payment.create({
+          data: {
+            saleId: sale.id,
+            amount: Number(input.downPayment),
+            method: 'CASH',
+          },
+        });
+      }
+      await tx.sale.update({
+        where: { id: sale.id },
+        data: { status: 'COMPLETED' },
+      });
+    });
   }
 
   // Link customer to sale if customerId or customerPhone provided

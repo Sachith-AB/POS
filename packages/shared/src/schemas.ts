@@ -248,12 +248,12 @@ export const installmentPlanCreateSchema = z.object({
   intervalDays: z.number().int().positive(),
   interestMethod: z.enum(INTEREST_METHODS).optional().default('PERCENTAGE'),
   interestValue: z.number().nonnegative().optional().default(0),
-  guarantorName: z.string().max(120).nullable().optional(),
-  guarantorNic: z.string().max(30).nullable().optional(),
-  guarantorPhone: z.string().max(20).nullable().optional(),
-  guarantorAddress: z.string().max(500).nullable().optional(),
+  guarantorName: z.string().min(1, 'Guarantor Name is required').max(120),
+  guarantorNic: z.string().min(1, 'Guarantor NIC is required').max(30),
+  guarantorPhone: z.string().min(1, 'Guarantor Phone is required').max(20),
+  guarantorAddress: z.string().min(1, 'Guarantor Address is required').max(500),
   guarantorPhotoUrl: z.string().nullable().optional(),
-  guarantorConsentGiven: z.boolean().optional().default(false),
+  guarantorConsentGiven: z.boolean().default(false),
 });
 export type InstallmentPlanCreateInput = z.infer<typeof installmentPlanCreateSchema>;
 

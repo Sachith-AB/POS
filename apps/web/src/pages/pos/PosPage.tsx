@@ -11,7 +11,9 @@ import type { Product } from '../../features/products/productsSlice';
 import { quickButtonsRequested } from '../../features/products/productsSlice';
 import {
   activeBillSwitched,
+  billCleared,
   billResumed,
+  billSaleIdAssigned,
   customerPhoneChanged,
   discountChanged,
   discountPercentChanged,
@@ -83,9 +85,12 @@ export function PosPage() {
   const amountRef = useRef<HTMLInputElement>(null);
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
   const qtyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [posError, setPosError] = useState<string>("");
+  const [startingInstallment, setStartingInstallment] = useState(false);
 
   useEffect(() => {
     setAmount('');
+    setPosError('');
   }, [activeIndex]);
 
   const handleF1 = () => {
@@ -383,7 +388,8 @@ export function PosPage() {
     }
 
     if (!amount || !amount.trim()) {
-      toast.error('Amount paid is required to complete the sale. Please enter the amount paid (F2).');
+      //toast.error('Amount paid is required to complete the sale. Please enter the amount paid (F2).');
+      setPosError('* Amount is required')
       amountRef.current?.focus();
       amountRef.current?.select();
       return;
@@ -391,19 +397,20 @@ export function PosPage() {
 
     const tenderedVal = Number(amount);
     if (isNaN(tenderedVal) || tenderedVal <= 0) {
-      toast.error('Please enter a valid amount paid.');
+      setPosError('* Please enter a valid amount');
       amountRef.current?.focus();
       amountRef.current?.select();
       return;
     }
 
     if (tenderedVal < total) {
-      toast.error(`Amount paid (Rs ${tenderedVal.toFixed(2)}) is less than total payable amount (Rs ${total.toFixed(2)}).`);
+      setPosError(`* Amount paid is less than total (Rs ${total.toFixed(2)})`);
       amountRef.current?.focus();
       amountRef.current?.select();
       return;
     }
 
+    setPosError('');
     const changeVal = Math.max(0, Math.round((tenderedVal - total) * 100) / 100);
     const paymentAmount = total;
     dispatch(
@@ -416,12 +423,79 @@ export function PosPage() {
     );
   }
 
+  async function handleStartInstallment() {
+    if (bill.items.length === 0) {
+      toast.warn('Please add products to the bill before starting an installment plan.');
+      return;
+    }
+
+    const missingImeiItem = bill.items.find((i) => i.isSerialized && !i.imei);
+    if (missingImeiItem) {
+      toast.error(`Please select an IMEI for ${missingImeiItem.name} before starting an installment plan.`);
+      return;
+    }
+
+    setStartingInstallment(true);
+    setPosError('');
+
+    try {
+      const itemsPayload = bill.items.map((i) => ({
+        productId: i.productId,
+        serializedItemId: i.serializedItemId ?? undefined,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+        priceType: (i.priceType as any) || 'RETAIL',
+      }));
+
+      let saleId = bill.saleId;
+      if (!saleId) {
+        const created = await api.post<{ id: string }>('/sales', {
+          status: 'PARKED',
+          discount: bill.discount,
+          discountPercent: bill.discountPercent,
+          customerId: bill.customerId || undefined,
+          warrantyPeriodId: bill.warrantyPeriodId || undefined,
+          tradeInId: bill.tradeInId || undefined,
+          items: itemsPayload,
+        });
+        saleId = created.id;
+        dispatch(billSaleIdAssigned({ billIndex: activeIndex, saleId: created.id }));
+      } else {
+        await api.patch(`/sales/${saleId}`, {
+          discount: bill.discount,
+          customerId: bill.customerId || undefined,
+          items: itemsPayload,
+        });
+      }
+
+      // Clear bill slot in POS and clear amount
+      dispatch(billCleared(activeIndex));
+      setAmount('');
+
+      // Build target URL to installments tab with selected sale and optional customer phone
+      const params = new URLSearchParams();
+      params.set('createSaleId', saleId);
+      if (bill.customerPhone) {
+        params.set('phone', bill.customerPhone);
+      }
+
+      navigate(`/installments?${params.toString()}`);
+    } catch (err: unknown) {
+      console.error('Failed to prepare installment plan for sale', err);
+      const msg = err instanceof Error ? err.message : 'Failed to prepare installment plan';
+      toast.error(msg);
+    } finally {
+      setStartingInstallment(false);
+    }
+  }
+
   async function handleUndoSale() {
     const saleId = lastCompletedBill?.saleId || lastCompleted?.id;
     if (!saleId) return;
     setUndoingSale(true);
     try {
       await api.post(`/sales/${saleId}/void`);
+      setPosError('');
       if (lastCompletedBill) {
         dispatch(saleUndone());
       } else if (lastCompleted) {
@@ -465,6 +539,7 @@ export function PosPage() {
     if (lastCompleted && printedRef.current !== lastCompleted.completedAt) {
       printedRef.current = lastCompleted.completedAt;
       setAmount('');
+      setPosError('');
       window.print();
       setShowSuccessModal(true);
       setShowSaleUndoToast(true);
@@ -623,7 +698,10 @@ export function PosPage() {
           method={method}
           onMethodChange={handleMethodChange}
           amount={amount}
-          onAmountChange={setAmount}
+          onAmountChange={(val) => {
+            setAmount(val);
+            if (posError) setPosError('');
+          }}
           amountRef={amountRef}
           quickCashOptions={quickCashOptions}
           tenderedNum={tenderedNum}
@@ -632,6 +710,9 @@ export function PosPage() {
           completing={completing}
           saving={saving}
           error={error}
+          posError={posError}
+          onStartInstallment={handleStartInstallment}
+          startingInstallment={startingInstallment}
         />
       </div>
 
@@ -677,15 +758,12 @@ export function PosPage() {
         lastCompleted={lastCompleted}
         onClose={() => {
           setShowSuccessModal(false);
+          setPosError('');
           dispatch(lastCompletedCleared());
         }}
         onPrintReceipt={() => window.print()}
         onUndoSale={handleUndoSale}
         undoingSale={undoingSale}
-        onNavigate={(path) => navigate(path)}
-        defaultDownPaymentPercent={settings?.defaultDownPaymentPercent ? Number(settings.defaultDownPaymentPercent) : 35}
-        defaultInterestMethod={settings?.defaultInterestMethod || 'PERCENTAGE'}
-        defaultInterestValue={Number(settings?.defaultInterestValue || 12)}
       />
     </>
   );

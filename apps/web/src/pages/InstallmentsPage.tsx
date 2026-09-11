@@ -60,6 +60,16 @@ interface SaleMinimal {
       };
     }[];
   } | null;
+  items?: {
+    id: string;
+    quantity: number;
+    unitPrice: number | string;
+    lineTotal?: number | string;
+    product?: {
+      id?: string;
+      name: string;
+    };
+  }[];
 }
 
 function getImageUrl(url?: string | null) {
@@ -94,9 +104,6 @@ export function InstallmentsPage() {
   const [customerDetails, setCustomerDetails] = useState<CustomerDetails | null>(null);
   const [customerSearching, setCustomerSearching] = useState(false);
   const [customerSearched, setCustomerSearched] = useState(false);
-
-  // Search matched customer from salesSearch (top input)
-  const [searchMatchedCustomer, setSearchMatchedCustomer] = useState<CustomerDetails | null>(null);
 
   // Guarantor auto-fill info
   const [guarantorCustomerMatch, setGuarantorCustomerMatch] = useState<CustomerDetails | null>(null);
@@ -184,12 +191,14 @@ export function InstallmentsPage() {
             total: sale.total,
             createdAt: sale.createdAt,
             customer: sale.customer,
+            items: sale.items,
           });
 
           // Pre-fill defaults from query params or settings (Q13)
           const urlDown = searchParams.get('downPayment');
           const urlMonths = searchParams.get('months');
           const urlInterest = searchParams.get('interest');
+          const urlPhone = searchParams.get('phone') || searchParams.get('customerPhone');
 
           const defaultDownPct = settings?.defaultDownPaymentPercent ? Number(settings.defaultDownPaymentPercent) : 35;
           const calculatedDown = urlDown ? urlDown : ((Number(sale.total) * defaultDownPct) / 100).toFixed(2);
@@ -199,9 +208,15 @@ export function InstallmentsPage() {
           setInterestValue(urlInterest || String(settings?.defaultInterestValue ?? 12));
           setInterestMethod(settings?.defaultInterestMethod || 'PERCENTAGE');
 
+          if (urlPhone && !sale.customer?.phone) {
+            setCustomerPhone(urlPhone);
+          }
+
           setShowCreateModal(true);
           const updatedParams = new URLSearchParams(searchParams);
           updatedParams.delete('createSaleId');
+          updatedParams.delete('phone');
+          updatedParams.delete('customerPhone');
           setSearchParams(updatedParams);
         })
         .catch((err) => console.error(err));
@@ -224,10 +239,23 @@ export function InstallmentsPage() {
               setCustomerDetails(res);
               if (res.nic) setCustomerNic(res.nic);
               if (res.address) setCustomerAddress(res.address);
+            } else {
+              setCustomerDetails(null);
             }
           })
-          .catch(() => {});
+          .catch(() => {
+            setCustomerDetails(null);
+          });
+      } else {
+        setCustomerDetails(null);
       }
+    } else if (selectedSale && !selectedSale.customer) {
+      setCustomerPhone('');
+      setCustomerName('');
+      setCustomerNic('');
+      setCustomerAddress('');
+      setCustomerDetails(null);
+      setCustomerSearched(false);
     }
   }, [selectedSale?.id]);
 
@@ -237,8 +265,21 @@ export function InstallmentsPage() {
     if (trimmed.length < 3) {
       setCustomerDetails(null);
       setCustomerSearched(false);
+      setCustomerName('');
+      setCustomerNic('');
+      setCustomerAddress('');
       return;
     }
+
+    // If currently matched to a customer whose phone doesn't match what is being typed,
+    // clear the previous customer details immediately so they don't leak into new customer
+    if (customerDetails && customerDetails.phone !== trimmed) {
+      setCustomerDetails(null);
+      setCustomerName('');
+      setCustomerNic('');
+      setCustomerAddress('');
+    }
+
     const timer = setTimeout(() => {
       setCustomerSearching(true);
       api
@@ -266,12 +307,19 @@ export function InstallmentsPage() {
                 : null
             );
           } else {
+            // Customer does not exist in DB: clear previous customer details so form is clean
             setCustomerDetails(null);
+            setCustomerName('');
+            setCustomerNic('');
+            setCustomerAddress('');
           }
         })
         .catch(() => {
           setCustomerDetails(null);
           setCustomerSearched(true);
+          setCustomerName('');
+          setCustomerNic('');
+          setCustomerAddress('');
         })
         .finally(() => {
           setCustomerSearching(false);
@@ -323,7 +371,7 @@ export function InstallmentsPage() {
     }
   }
 
-  // Fetch completed sales for dropdown search + customer phone check
+  // Fetch completed sales for dropdown search
   useEffect(() => {
     const trimmed = salesSearch.trim();
     if (showCreateModal && trimmed.length >= 2) {
@@ -334,44 +382,10 @@ export function InstallmentsPage() {
           setCompletedSales(list);
         })
         .catch((err) => console.error(err));
-
-      if (trimmed.length >= 3) {
-        api
-          .get<CustomerDetails | null>(`/customers/lookup?phone=${encodeURIComponent(trimmed)}`)
-          .then((c) => {
-            setSearchMatchedCustomer(c);
-            if (c && selectedSale && (!selectedSale.customer || !selectedSale.customer.phone)) {
-              setCustomerPhone(c.phone);
-              setCustomerName(c.name || '');
-              setCustomerNic(c.nic || '');
-              setCustomerAddress(c.address || '');
-              setCustomerDetails(c);
-              setSelectedSale((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      customer: {
-                        id: c.id,
-                        name: c.name,
-                        phone: c.phone,
-                        nic: c.nic,
-                        address: c.address,
-                        categories: c.categories,
-                      },
-                    }
-                  : null
-              );
-            }
-          })
-          .catch(() => setSearchMatchedCustomer(null));
-      } else {
-        setSearchMatchedCustomer(null);
-      }
     } else {
       setCompletedSales([]);
-      setSearchMatchedCustomer(null);
     }
-  }, [showCreateModal, salesSearch, selectedSale?.id]);
+  }, [showCreateModal, salesSearch]);
 
   function handleFilterStatusChange(status: string) {
     dispatch(filtersChanged({ status, page: 1 }));
@@ -390,6 +404,27 @@ export function InstallmentsPage() {
     const effectivePhone = customerPhone.trim() || selectedSale.customer?.phone || '';
     if (!effectivePhone) {
       alert('Please enter a customer phone number for the installment agreement.');
+      return;
+    }
+
+    if (!guarantorName.trim()) {
+      alert('Guarantor Name is required.');
+      return;
+    }
+    if (!guarantorPhone.trim()) {
+      alert('Guarantor Phone is required.');
+      return;
+    }
+    if (!guarantorNic.trim()) {
+      alert('Guarantor NIC is required.');
+      return;
+    }
+    if (!guarantorAddress.trim()) {
+      alert('Guarantor Address is required.');
+      return;
+    }
+    if (!guarantorConsent) {
+      alert('Guarantor consent & agreement terms must be acknowledged.');
       return;
     }
 
@@ -426,11 +461,11 @@ export function InstallmentsPage() {
         intervalDays: parseInt(intervalDays),
         interestMethod,
         interestValue: parseFloat(interestValue) || 0,
-        guarantorName: guarantorName || undefined,
-        guarantorNic: guarantorNic || undefined,
-        guarantorPhone: guarantorPhone || undefined,
-        guarantorAddress: guarantorAddress || undefined,
-        guarantorPhotoUrl: guarantorPhotoUrl || undefined,
+        guarantorName: guarantorName.trim(),
+        guarantorNic: guarantorNic.trim(),
+        guarantorPhone: guarantorPhone.trim(),
+        guarantorAddress: guarantorAddress.trim(),
+        guarantorPhotoUrl: guarantorPhotoUrl.trim() || undefined,
         guarantorConsentGiven: guarantorConsent,
       })
     );
@@ -443,7 +478,6 @@ export function InstallmentsPage() {
     setCustomerAddress('');
     setCustomerDetails(null);
     setCustomerSearched(false);
-    setSearchMatchedCustomer(null);
     setGuarantorCustomerMatch(null);
     setDownPayment('');
     setGuarantorName('');
@@ -912,103 +946,6 @@ export function InstallmentsPage() {
             <p className="text-xs text-muted mb-4">Set down payment, interest terms, and guarantor details.</p>
 
             <form onSubmit={handleCreatePlan} className="space-y-4">
-              {/* Search Completed Sales */}
-              <div>
-                <label className="text-xs font-semibold text-muted block mb-1">
-                  Search Completed Sale (By Client Name, Phone, or ID)
-                </label>
-                <Input
-                  placeholder="Type to search completed sales..."
-                  value={salesSearch}
-                  onChange={(e) => setSalesSearch(e.target.value)}
-                  className="w-full text-xs"
-                />
-
-                {/* If typing phone in search box matches a customer */}
-                {searchMatchedCustomer ? (
-                  <div className="mt-2 flex items-center justify-between p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs animate-in fade-in duration-150">
-                    <div className="flex items-center gap-2">
-                      <FiUser className="text-emerald-600 dark:text-emerald-400 h-4 w-4 shrink-0" />
-                      <div>
-                        <div className="font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
-                          <span>Customer in DB: {searchMatchedCustomer.name || 'Registered Customer'}</span>
-                          {searchMatchedCustomer.categories?.map((c) => (
-                            <span
-                              key={c.category.id}
-                              className="px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-emerald-600 text-white"
-                            >
-                              {c.category.emoji ? `${c.category.emoji} ` : ''}
-                              {c.category.name}
-                            </span>
-                          ))}
-                        </div>
-                        <div className="text-[11px] text-muted font-mono">
-                          Phone: {searchMatchedCustomer.phone} {searchMatchedCustomer.nic ? `• NIC: ${searchMatchedCustomer.nic}` : ''}
-                          {searchMatchedCustomer.address ? ` • ${searchMatchedCustomer.address}` : ''}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCustomerPhone(searchMatchedCustomer.phone);
-                        setCustomerName(searchMatchedCustomer.name || '');
-                        setCustomerNic(searchMatchedCustomer.nic || '');
-                        setCustomerAddress(searchMatchedCustomer.address || '');
-                        setCustomerDetails(searchMatchedCustomer);
-                        if (selectedSale) {
-                          setSelectedSale({
-                            ...selectedSale,
-                            customer: {
-                              id: searchMatchedCustomer.id,
-                              name: searchMatchedCustomer.name,
-                              phone: searchMatchedCustomer.phone,
-                              nic: searchMatchedCustomer.nic,
-                              address: searchMatchedCustomer.address,
-                              categories: searchMatchedCustomer.categories,
-                            },
-                          });
-                        }
-                      }}
-                      className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer transition-colors"
-                    >
-                      Attach
-                    </button>
-                  </div>
-                ) : null}
-
-                {completedSales.length > 0 ? (
-                  <div className="mt-1 max-h-36 overflow-y-auto border border-border rounded-lg bg-canvas divide-y divide-border">
-                    {completedSales.map((s) => (
-                      <div
-                        key={s.id}
-                        onClick={() => {
-                          setSelectedSale(s);
-                          setCompletedSales([]);
-                          setSalesSearch('');
-                          if (s.customer?.phone) {
-                            setCustomerPhone(s.customer.phone);
-                            setCustomerName(s.customer.name || '');
-                            setCustomerNic(s.customer.nic || '');
-                            setCustomerAddress(s.customer.address || '');
-                          }
-                          // Set default 35% down payment (Q13)
-                          const defaultDownPct = settings?.defaultDownPaymentPercent ? Number(settings.defaultDownPaymentPercent) : 35;
-                          setDownPayment(((Number(s.total) * defaultDownPct) / 100).toFixed(2));
-                        }}
-                        className="p-2 text-xs text-ink cursor-pointer hover:bg-surface-hover flex justify-between items-center"
-                      >
-                        <div>
-                          <span className="font-bold">{s.customer?.name || 'Walk-in'}</span>
-                          <span className="text-muted ml-2">({s.customer?.phone || 'No phone'})</span>
-                          <span className="text-[10px] text-muted ml-2 font-mono">#{s.id.slice(-6)}</span>
-                        </div>
-                        <span className="font-mono font-bold">Rs {Number(s.total).toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
 
               {selectedSale ? (
                 <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs">
@@ -1020,29 +957,35 @@ export function InstallmentsPage() {
                     Customer: <span className="font-semibold text-ink">{customerDetails?.name || selectedSale.customer?.name || 'Walk-in'}</span>{' '}
                     <span className="font-mono">({customerPhone || selectedSale.customer?.phone || 'No phone'})</span>
                   </p>
+                  {selectedSale.items && selectedSale.items.length > 0 && (
+                    <div className="my-2 p-2 rounded-lg bg-surface/90 border border-border/70">
+                      <span className="font-semibold text-ink text-[11px] block mb-1">Products in this agreement:</span>
+                      <ul className="space-y-1">
+                        {selectedSale.items.map((it: any, idx: number) => (
+                          <li key={idx} className="flex justify-between items-center text-[11px] text-ink">
+                            <span className="truncate max-w-[240px] font-medium">
+                              {it.product?.name || 'Item'} {it.quantity > 1 ? `× ${it.quantity}` : ''}
+                            </span>
+                            <span className="font-mono text-muted">
+                              Rs {Number(it.lineTotal || (Number(it.unitPrice) * it.quantity)).toFixed(2)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <p>Sale Date: {new Date(selectedSale.createdAt).toLocaleDateString()}</p>
                   <p className="font-bold text-ink">Total Bill: Rs {Number(selectedSale.total).toFixed(2)}</p>
                 </div>
               ) : null}
 
               {/* Customer Details for Agreement */}
-              <div className="rounded-xl border border-border bg-canvas p-3.5 space-y-3">
+              <div className="rounded-xl border border-border p-3.5 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 font-bold text-ink uppercase tracking-wide text-xs">
                     <FiUser className="h-4 w-4 text-primary" />
                     <span>Customer Details (Agreement Holder)</span>
                   </div>
-                  {customerDetails ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                      <FiCheckCircle className="h-3 w-3" />
-                      Found in DB
-                    </span>
-                  ) : customerPhone && customerSearched ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                      <FiAlertCircle className="h-3 w-3" />
-                      New Customer
-                    </span>
-                  ) : null}
                 </div>
 
                 <div>
@@ -1107,9 +1050,6 @@ export function InstallmentsPage() {
                 ) : customerPhone.trim().length >= 3 && customerSearched ? (
                   /* If New Customer (not found in DB), allow filling details to register */
                   <div className="space-y-2.5 border-t border-border pt-2.5">
-                    <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-700 dark:text-amber-300">
-                      Customer phone <span className="font-mono font-bold text-ink">{customerPhone}</span> is not registered in the database. Enter details to register:
-                    </div>
                     <div className="grid grid-cols-2 gap-2.5">
                       <div>
                         <label className="text-[10px] font-semibold text-muted block mb-0.5">Customer Name</label>
@@ -1239,22 +1179,36 @@ export function InstallmentsPage() {
 
               {/* Guarantor Details & Consent */}
               <div className="border-t border-border pt-3 space-y-3">
-                <h3 className="text-xs font-bold text-ink uppercase tracking-wide">Guarantor Information</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-ink uppercase tracking-wide flex items-center gap-1">
+                    <span>Guarantor Information</span>
+                    <span className="text-rose-500 font-bold" title="Required">*</span>
+                  </h3>
+                  <span className="text-[10px] text-rose-500 font-semibold">* All Guarantor fields required</span>
+                </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[10px] font-semibold text-muted block mb-1">Guarantor Name</label>
+                    <label className="text-[10px] font-semibold text-muted flex items-center gap-1 mb-1">
+                      <span>Guarantor Name</span>
+                      <span className="text-rose-500 font-bold">*</span>
+                    </label>
                     <Input
-                      placeholder="Name"
+                      required
+                      placeholder="Full Name (Required)"
                       value={guarantorName}
                       onChange={(e) => setGuarantorName(e.target.value)}
                       className="w-full text-xs"
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-semibold text-muted block mb-1">Guarantor Phone</label>
+                    <label className="text-[10px] font-semibold text-muted flex items-center gap-1 mb-1">
+                      <span>Guarantor Phone</span>
+                      <span className="text-rose-500 font-bold">*</span>
+                    </label>
                     <Input
-                      placeholder="07XXXXXXXX"
+                      required
+                      placeholder="07XXXXXXXX (Required)"
                       value={guarantorPhone}
                       onChange={(e) => setGuarantorPhone(e.target.value)}
                       className="w-full text-xs font-mono"
@@ -1284,18 +1238,26 @@ export function InstallmentsPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[10px] font-semibold text-muted block mb-1">Guarantor NIC</label>
+                    <label className="text-[10px] font-semibold text-muted flex items-center gap-1 mb-1">
+                      <span>Guarantor NIC</span>
+                      <span className="text-rose-500 font-bold">*</span>
+                    </label>
                     <Input
-                      placeholder="National ID Card No."
+                      required
+                      placeholder="National ID Card No. (Required)"
                       value={guarantorNic}
                       onChange={(e) => setGuarantorNic(e.target.value)}
                       className="w-full text-xs"
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-semibold text-muted block mb-1">Guarantor Address</label>
+                    <label className="text-[10px] font-semibold text-muted flex items-center gap-1 mb-1">
+                      <span>Guarantor Address</span>
+                      <span className="text-rose-500 font-bold">*</span>
+                    </label>
                     <Input
-                      placeholder="Address"
+                      required
+                      placeholder="Residential Address (Required)"
                       value={guarantorAddress}
                       onChange={(e) => setGuarantorAddress(e.target.value)}
                       className="w-full text-xs"
@@ -1388,12 +1350,15 @@ export function InstallmentsPage() {
 
                 <label className="flex items-center gap-2 text-xs text-muted cursor-pointer pt-1">
                   <input
+                    required
                     type="checkbox"
                     checked={guarantorConsent}
                     onChange={(e) => setGuarantorConsent(e.target.checked)}
                     className="rounded border-border text-primary focus:ring-0"
                   />
-                  <span>Guarantor consent &amp; agreement terms acknowledged</span>
+                  <span className={guarantorConsent ? 'font-medium text-ink' : 'text-muted'}>
+                    Guarantor consent &amp; agreement terms acknowledged <span className="text-rose-500 font-bold">*</span>
+                  </span>
                 </label>
               </div>
 
