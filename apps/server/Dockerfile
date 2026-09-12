@@ -47,9 +47,13 @@ RUN npm ci --omit=dev --ignore-scripts
 COPY --from=builder /app/apps/server/dist ./apps/server/dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 
-# Copy Prisma schema and generated client
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+# Copy Prisma CLI from builder (it's a devDep, not available in prod install)
+COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+
+# Copy Prisma schema and generate client in production environment
 COPY apps/server/prisma ./apps/server/prisma
+RUN cd apps/server && node_modules/.bin/prisma generate --schema=prisma/schema.prisma
 
 # Create directories for uploads and backups (volumes will be mounted here)
 RUN mkdir -p /app/apps/server/uploads /app/apps/server/backups
