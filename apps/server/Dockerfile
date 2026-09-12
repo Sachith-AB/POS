@@ -20,8 +20,11 @@ COPY apps/server/ ./apps/server/
 # Generate Prisma client
 RUN npm run prisma:generate
 
-# Build shared package first, then server
+# Build shared package first, then patch dist files for Node.js ESM compatibility
 RUN cd packages/shared && npx tsc -p tsconfig.json || true
+# Add .js extensions to relative imports in compiled dist (required for Node.js ESM)
+RUN find packages/shared/dist -name "*.js" -exec sed -i "s|from '\.\./\([^']*\)'|from '../\1.js'|g" {} + ; \
+    find packages/shared/dist -name "*.js" -exec sed -i "s|from '\./\([^'.][^']*\)'|from './\1.js'|g" {} +
 RUN cd apps/server && npx tsc -p tsconfig.json
 
 # ─── Stage 2: Production ─────────────────────────────────────────────────────
