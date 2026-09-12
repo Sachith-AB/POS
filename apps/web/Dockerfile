@@ -21,6 +21,12 @@ COPY apps/web/ ./apps/web/
 ARG VITE_API_URL
 ENV VITE_API_URL=$VITE_API_URL
 
+# Build shared package first
+RUN cd packages/shared && npx tsc -p tsconfig.json || true
+# Add .js extensions to relative imports in compiled dist (required for Node.js ESM)
+RUN find packages/shared/dist -name "*.js" -exec sed -i "s|from '\.\./\([^']*\)'|from '../\1.js'|g" {} + ; \
+    find packages/shared/dist -name "*.js" -exec sed -i "s|from '\./\([^'.][^']*\)'|from './\1.js'|g" {} +
+
 # Build the frontend
 RUN cd apps/web && npx vite build
 
