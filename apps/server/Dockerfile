@@ -56,7 +56,7 @@ COPY apps/server/prisma ./apps/server/prisma
 RUN /app/node_modules/.bin/prisma generate --schema=/app/apps/server/prisma/schema.prisma
 
 # Create directories for uploads and backups (volumes will be mounted here)
-RUN mkdir -p /app/apps/server/uploads /app/apps/server/backups
+RUN mkdir -p /app/uploads /app/backups
 
 # Use non-root user for security
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
