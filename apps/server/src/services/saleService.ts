@@ -29,6 +29,72 @@ export async function listParkedSales(employeeId: string) {
   });
 }
 
+export async function listSales(filters: { search?: string; status?: string; limit?: number }) {
+  const limit = Math.min(Number(filters.limit || 20), 50);
+  const where: any = {};
+
+  if (filters.status && filters.status !== 'ALL') {
+    where.status = filters.status;
+  }
+
+  if (filters.search && filters.search.trim()) {
+    const q = filters.search.trim();
+    const digitsOnly = q.replace(/\D/g, '');
+    const phoneVariants = [q];
+    if (digitsOnly) {
+      phoneVariants.push(digitsOnly);
+      if (digitsOnly.startsWith('0')) phoneVariants.push(digitsOnly.slice(1));
+    }
+
+    where.OR = [
+      { id: { contains: q, mode: 'insensitive' } },
+      {
+        customer: {
+          OR: [
+            { phone: { in: phoneVariants } },
+            { phone: { contains: digitsOnly || q } },
+            { name: { contains: q, mode: 'insensitive' } },
+            { nic: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+      },
+      {
+        items: {
+          some: {
+            product: {
+              name: { contains: q, mode: 'insensitive' },
+            },
+          },
+        },
+      },
+    ];
+  }
+
+  return prisma.sale.findMany({
+    where,
+    include: {
+      customer: {
+        include: {
+          categories: {
+            include: {
+              category: true,
+            },
+          },
+        },
+      },
+      items: {
+        include: {
+          product: true,
+        },
+      },
+      payments: true,
+      installmentPlan: true,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
+}
+
 export async function getSale(id: string) {
   const sale = await prisma.sale.findUnique({
     where: { id },
@@ -142,6 +208,10 @@ export async function createSale(input: SaleCreateInput, employeeId: string) {
       where: { id: input.tradeInId },
       data: { saleId: sale.id, status: 'ADJUSTED' },
     });
+    return (await prisma.sale.findUnique({
+      where: { id: sale.id },
+      include: { items: { include: { warrantyPeriod: true } }, warrantyPeriod: true, tradeIns: true },
+    }))!;
   }
 
   return sale;
@@ -215,6 +285,10 @@ export async function updateSaleItems(
         where: { id: input.tradeInId },
         data: { saleId, status: 'ADJUSTED' },
       });
+      return (await tx.sale.findUnique({
+        where: { id: saleId },
+        include: { items: { include: { warrantyPeriod: true } }, warrantyPeriod: true, tradeIns: true },
+      }))!;
     }
 
     return updated;
@@ -225,6 +299,12 @@ export async function updateSaleItems(
 export async function completeSale(saleId: string, employeeId: string, paymentAmount: number, method: string) {
   const sale = await getSale(saleId);
   if (sale.status !== 'PARKED') throw new HttpError(409, 'Sale already finalized');
+
+  // Mandatory customer requirement for mobile phone sales
+  const hasSerializedItem = sale.items.some((i) => i.serializedItemId);
+  if (hasSerializedItem && !sale.customerId) {
+    throw new HttpError(400, 'Customer details are mandatory when selling a mobile phone');
+  }
 
   const settings = await getSettings();
   const discountPercent = (Number(sale.discount) / Math.max(1, Number(sale.subtotal))) * 100;
@@ -239,7 +319,18 @@ export async function completeSale(saleId: string, employeeId: string, paymentAm
     return tx.sale.update({
       where: { id: saleId },
       data: { status: 'COMPLETED' },
-      include: { items: true, payments: true, customer: true, warrantyPeriod: true },
+      include: {
+        items: {
+          include: {
+            product: true,
+            warrantyPeriod: true,
+          },
+        },
+        payments: true,
+        customer: true,
+        warrantyPeriod: true,
+        tradeIns: true,
+      },
     });
   });
 
@@ -258,7 +349,37 @@ export async function completeSale(saleId: string, employeeId: string, paymentAm
 
 export async function voidSale(saleId: string, employeeId: string) {
   const sale = await getSale(saleId);
-  const voided = await prisma.sale.update({ where: { id: saleId }, data: { status: 'VOID' } });
+  if (sale.status === 'VOID') {
+    return sale;
+  }
+  const voided = await prisma.$transaction(async (tx) => {
+    if (sale.status === 'COMPLETED') {
+      for (const item of sale.items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { quantity: { increment: item.quantity } },
+        });
+        await tx.stockMovement.create({
+          data: {
+            productId: item.productId,
+            type: 'RETURN',
+            quantityDelta: item.quantity,
+            employeeId,
+          },
+        });
+        await tx.serializedItem.updateMany({
+          where: { soldInSaleItemId: item.id },
+          data: { status: 'IN_STOCK', soldInSaleItemId: null },
+        });
+      }
+      await tx.tradeIn.updateMany({
+        where: { saleId },
+        data: { status: 'PENDING', saleId: null },
+      });
+    }
+    return tx.sale.update({ where: { id: saleId }, data: { status: 'VOID' } });
+  });
+
   await recordAudit({
     employeeId,
     action: 'VOID_SALE',

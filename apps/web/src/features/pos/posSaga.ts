@@ -6,6 +6,9 @@ import {
   billSaleIdAssigned,
   customerMatched,
   customerPhoneChanged,
+  customerSearchStarted,
+  customerSearchFinished,
+  customerLookupReset,
   discountChanged,
   itemScanned,
   lineQuantityChanged,
@@ -18,11 +21,12 @@ import {
   savingStarted,
   completingStarted,
 } from './posSlice';
-import type { BillSlot, CartLine } from './posTypes';
+import type { BillSlot, CartLine, CustomerMatchedData } from './posTypes';
 
 function toItemsInput(items: CartLine[]) {
   return items.map((i) => ({
     productId: i.productId,
+    serializedItemId: i.serializedItemId ?? undefined,
     quantity: i.quantity,
     unitPrice: i.unitPrice,
     priceType: i.priceType || 'RETAIL',
@@ -71,21 +75,24 @@ function* autosaveWorker() {
   }
 }
 
-function* customerLookupWorker() {
+function* customerLookupWorker(action?: ReturnType<typeof customerPhoneChanged>) {
   const state: RootState = yield select();
-  const phone = state.pos.bills[state.pos.activeIndex].customerPhone;
-  if (phone.length < 7) {
-    yield put(customerMatched(null));
+  const phone = (action?.payload ?? state.pos.bills[state.pos.activeIndex]?.customerPhone ?? '').trim();
+  if (phone.length < 3) {
+    yield put(customerLookupReset());
     return;
   }
+  yield put(customerSearchStarted());
   try {
-    const customer: { id: string; name: string | null } | null = yield call(
+    const customer: CustomerMatchedData | null = yield call(
       api.get,
       `/customers/lookup?phone=${encodeURIComponent(phone)}`
     );
     yield put(customerMatched(customer));
   } catch {
     yield put(customerMatched(null));
+  } finally {
+    yield put(customerSearchFinished());
   }
 }
 
@@ -97,11 +104,23 @@ function* completeWorker(action: ReturnType<typeof saleCompleteRequested>) {
   try {
     const saleId: string | null = yield call(ensureSaleSaved, billIndex);
     if (!saleId) throw new Error('Cannot complete an empty sale');
-    const result: { id: string; total: string | number } = yield call(
+    const result: { id: string; total: string | number; tradeIns?: any[] } = yield call(
       api.post,
       `/sales/${saleId}/complete`,
-      action.payload
+      { amount: action.payload.amount, method: action.payload.method }
     );
+    const tradeInFromSale = result.tradeIns && result.tradeIns.length > 0 ? result.tradeIns[0] : null;
+    const tradeInDevice = tradeInFromSale
+      ? {
+          id: tradeInFromSale.id,
+          deviceInfo: tradeInFromSale.deviceInfo,
+          imei: tradeInFromSale.imei || null,
+          condition: tradeInFromSale.condition,
+          tradeInValue: Number(tradeInFromSale.tradeInValue),
+        }
+      : bill.tradeInDevice ?? null;
+    const tradeInDeduction = bill.tradeInValue || (tradeInDevice ? Number(tradeInDevice.tradeInValue) : 0);
+
     yield put(
       saleCompleted({
         id: result.id,
@@ -109,7 +128,14 @@ function* completeWorker(action: ReturnType<typeof saleCompleteRequested>) {
         discount: bill.discount,
         total: Number(result.total),
         customerName: bill.customerName,
+        customerPhone: bill.customerPhone || bill.customerDetails?.phone || null,
+        customerAddress: bill.customerDetails?.address || null,
+        customerNic: bill.customerDetails?.nic || null,
         completedAt: new Date().toISOString(),
+        tenderedAmount: action.payload.tenderedAmount,
+        changeAmount: action.payload.changeAmount,
+        tradeInDeduction,
+        tradeInDevice,
       })
     );
 
@@ -124,10 +150,14 @@ import {
   discountPercentChanged,
   warrantySelected,
   tradeInApplied,
+  serializedItemAdded,
+  lineImeiSelected,
 } from './posSlice';
 
 const AUTOSAVE_TRIGGERS = [
   itemScanned.type,
+  serializedItemAdded.type,
+  lineImeiSelected.type,
   lineQuantityChanged.type,
   linePriceChanged.type,
   linePriceTypeChanged.type,
@@ -137,6 +167,7 @@ const AUTOSAVE_TRIGGERS = [
   discountPercentChanged.type,
   warrantySelected.type,
   tradeInApplied.type,
+  customerMatched.type,
 ];
 
 export default function* posSaga() {

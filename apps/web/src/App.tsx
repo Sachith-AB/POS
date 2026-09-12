@@ -6,7 +6,9 @@ import { meRequested } from './features/auth/authSlice';
 import { settingsRequested } from './features/settings/settingsSlice';
 import { AppHeader } from './components/AppHeader';
 import { LoginPage } from './pages/LoginPage';
-import { PosPage } from './pages/PosPage';
+import { PosPage } from './pages/pos/PosPage';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const StockPage = lazy(() => import('./pages/StockPage').then((m) => ({ default: m.StockPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
@@ -105,6 +107,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/pos" replace />} />
         </Routes>
       </Suspense>
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop closeOnClick pauseOnHover theme="colored" />
     </div>
   );
 }

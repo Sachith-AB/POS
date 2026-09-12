@@ -20,6 +20,7 @@ import { Button } from '../components/Button';
 import { A5RepairBill } from '../components/A5RepairBill';
 import { Input } from '../components/Input';
 import { REPAIR_STATUSES } from '@pos/shared';
+import { toast } from 'react-toastify';
 import { api } from '../lib/api';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -309,8 +310,9 @@ export function RepairsPage() {
       setShowOutsourceModal(false);
       setOutPersonPlace('');
       setOutNotes('');
+      toast.success('Outsourced repair recorded successfully');
     } catch (err: any) {
-      alert(err.message || 'Failed to create outsourced repair');
+      toast.error(err.message || 'Failed to create outsourced repair');
     }
   }
 

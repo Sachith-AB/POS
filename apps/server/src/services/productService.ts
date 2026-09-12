@@ -28,6 +28,67 @@ export async function getProductByBarcode(barcode: string) {
   });
 }
 
+export async function listMobilePhones(params: { search?: string } = {}) {
+  const { search } = params;
+  return prisma.product.findMany({
+    where: {
+      isSerialized: true,
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { sku: { contains: search, mode: 'insensitive' } },
+              { barcode: { contains: search, mode: 'insensitive' } },
+              {
+                serializedItems: {
+                  some: {
+                    imei: { contains: search, mode: 'insensitive' },
+                    status: 'IN_STOCK',
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    },
+    include: {
+      warrantyPeriod: true,
+      categoryRel: true,
+      serializedItems: {
+        where: { status: 'IN_STOCK' },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
+    orderBy: { name: 'asc' },
+  });
+}
+
+export async function getMobileByImei(imei: string) {
+  const trimmed = imei.trim();
+  const item = await prisma.serializedItem.findFirst({
+    where: {
+      imei: trimmed,
+      status: 'IN_STOCK',
+    },
+    include: {
+      product: {
+        include: {
+          warrantyPeriod: true,
+          categoryRel: true,
+        },
+      },
+    },
+  });
+  if (!item) return null;
+  return {
+    ...item.product,
+    selectedSerializedItem: {
+      id: item.id,
+      imei: item.imei,
+    },
+  };
+}
+
 export async function getProductById(id: string) {
   const product = await prisma.product.findUnique({
     where: { id },
@@ -63,4 +124,26 @@ export async function listDeadStock(months: number) {
   const soldIds = new Set(soldProductIds.map((s) => s.productId));
   const all = await prisma.product.findMany();
   return all.filter((p) => !soldIds.has(p.id));
+}
+
+export async function deleteProduct(id: string) {
+  await getProductById(id);
+  const salesCount = await prisma.saleItem.count({
+    where: { productId: id },
+  });
+  if (salesCount > 0) {
+    throw new HttpError(
+      400,
+      'Cannot delete product because it is recorded in completed or parked sales history. You can adjust its stock quantity to 0 instead.'
+    );
+  }
+
+  await prisma.$transaction([
+    prisma.serializedItem.deleteMany({ where: { productId: id } }),
+    prisma.stockMovement.deleteMany({ where: { productId: id } }),
+    prisma.supplierReturn.deleteMany({ where: { productId: id } }),
+    prisma.product.delete({ where: { id } }),
+  ]);
+
+  return { success: true, id };
 }

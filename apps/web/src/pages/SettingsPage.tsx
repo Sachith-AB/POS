@@ -8,6 +8,9 @@ import { Button } from '../components/Button';
 import { PinInput } from '../components/PinInput';
 import { Overlay } from '../components/Overlay';
 import { UndoToast } from '../components/UndoToast';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { FiEdit2, FiTrash2 } from 'react-icons/fi';
+import { toast } from 'react-toastify';
 import { api } from '../lib/api';
 
 const selectClass = 'w-full rounded-lg border border-border bg-canvas px-3 py-2 text-xs text-ink focus:border-primary focus:outline-none';
@@ -123,6 +126,27 @@ export function SettingsPage() {
   const [testSmsLoading, setTestSmsLoading] = useState(false);
   const [testSmsResult, setTestSmsResult] = useState<string | null>(null);
 
+  // Category delete confirmation modal states
+  const [categoryToDelete, setCategoryToDelete] = useState<CategoryItem | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState(false);
+  const [custCategoryToDelete, setCustCategoryToDelete] = useState<{ id: string; name: string; emoji: string | null; color: string | null; description: string | null } | null>(null);
+  const [deletingCustCategory, setDeletingCustCategory] = useState(false);
+
+  // Category edit modal states
+  const [editingCategory, setEditingCategory] = useState<CategoryItem | null>(null);
+  const [editCatName, setEditCatName] = useState('');
+  const [savingCatEdit, setSavingCatEdit] = useState(false);
+  const [editCatError, setEditCatError] = useState<string | null>(null);
+
+  // Customer Group edit modal states
+  const [editingCustCategory, setEditingCustCategory] = useState<{ id: string; name: string; emoji: string | null; color: string | null; description: string | null } | null>(null);
+  const [editCustCatName, setEditCustCatName] = useState('');
+  const [editCustCatEmoji, setEditCustCatEmoji] = useState('');
+  const [editCustCatColor, setEditCustCatColor] = useState('#3B82F6');
+  const [editCustCatDesc, setEditCustCatDesc] = useState('');
+  const [savingCustCatEdit, setSavingCustCatEdit] = useState(false);
+  const [editCustCatError, setEditCustCatError] = useState<string | null>(null);
+
   // 5-Second Undo Toast State using shared UndoToast component
   const [undoToast, setUndoToast] = useState<{
     message: string;
@@ -191,39 +215,41 @@ export function SettingsPage() {
       });
       setNewCustCatName('');
       loadCustomerCategories();
+      toast.success('Customer group added successfully');
     } catch (err: any) {
-      alert(err.message || 'Failed to add customer category');
+      toast.error(err.message || 'Failed to add customer category');
     }
   }
 
-  async function handleDeleteCustomerCategory(id: string) {
-    const itemToDelete = customerCategories.find((c) => c.id === id);
-    if (!itemToDelete) return;
-
-    // Immediately remove from UI state without confirm popup
-    setCustomerCategories((prev) => prev.filter((c) => c.id !== id));
-
+  async function confirmDeleteCustomerCategory() {
+    if (!custCategoryToDelete) return;
+    const itemToDelete = custCategoryToDelete;
+    setDeletingCustCategory(true);
     try {
-      await api.delete(`/customer-categories/${id}`);
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete customer category');
-      loadCustomerCategories();
-      return;
-    }
+      await api.delete(`/customer-categories/${itemToDelete.id}`);
+      setCustomerCategories((prev) => prev.filter((c) => c.id !== itemToDelete.id));
+      toast.success(`Customer group "${itemToDelete.name}" deleted`);
 
-    triggerUndoToast(`Customer Group "${itemToDelete.name}" deleted`, async () => {
-      try {
-        await api.post('/customer-categories', {
-          name: itemToDelete.name,
-          emoji: itemToDelete.emoji,
-          color: itemToDelete.color,
-          description: itemToDelete.description,
-        });
-        loadCustomerCategories();
-      } catch (err: any) {
-        alert(err.message || 'Failed to restore customer group');
-      }
-    });
+      triggerUndoToast(`Customer Group "${itemToDelete.name}" deleted`, async () => {
+        try {
+          await api.post('/customer-categories', {
+            name: itemToDelete.name,
+            emoji: itemToDelete.emoji,
+            color: itemToDelete.color,
+            description: itemToDelete.description,
+          });
+          loadCustomerCategories();
+          toast.success(`Restored customer group "${itemToDelete.name}"`);
+        } catch (err: any) {
+          toast.error(err.message || 'Failed to restore customer group');
+        }
+      });
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete customer category');
+    } finally {
+      setDeletingCustCategory(false);
+      setCustCategoryToDelete(null);
+    }
   }
 
   const loadWarranties = () => {
@@ -241,34 +267,78 @@ export function SettingsPage() {
       await api.post('/categories', { name: newCatName.trim() });
       setNewCatName('');
       loadCategories();
+      toast.success('Category added successfully');
     } catch (err: any) {
-      alert(err.message || 'Failed to add category');
+      toast.error(err.message || 'Failed to add category');
     }
   }
 
-  async function handleDeleteCategory(id: string) {
-    const itemToDelete = categories.find((c) => c.id === id);
-    if (!itemToDelete) return;
-
-    // Immediately remove from UI state without confirm popup
-    setCategories((prev) => prev.filter((c) => c.id !== id));
-
+  async function confirmDeleteCategory() {
+    if (!categoryToDelete) return;
+    const itemToDelete = categoryToDelete;
+    setDeletingCategory(true);
     try {
-      await api.delete(`/categories/${id}`);
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete category');
-      loadCategories();
-      return;
-    }
+      await api.delete(`/categories/${itemToDelete.id}`);
+      setCategories((prev) => prev.filter((c) => c.id !== itemToDelete.id));
+      toast.success(`Category "${itemToDelete.name}" deleted`);
 
-    triggerUndoToast(`Product Category "${itemToDelete.name}" deleted`, async () => {
-      try {
-        await api.post('/categories', { name: itemToDelete.name });
-        loadCategories();
-      } catch (err: any) {
-        alert(err.message || 'Failed to restore category');
-      }
-    });
+      triggerUndoToast(`Product Category "${itemToDelete.name}" deleted`, async () => {
+        try {
+          await api.post('/categories', { name: itemToDelete.name });
+          loadCategories();
+          toast.success(`Restored category "${itemToDelete.name}"`);
+        } catch (err: any) {
+          toast.error(err.message || 'Failed to restore category');
+        }
+      });
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete category');
+    } finally {
+      setDeletingCategory(false);
+      setCategoryToDelete(null);
+    }
+  }
+
+  async function handleSaveCategoryEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editingCategory || !editCatName.trim()) return;
+    setSavingCatEdit(true);
+    setEditCatError(null);
+    try {
+      const updated = await api.patch<CategoryItem>(`/categories/${editingCategory.id}`, {
+        name: editCatName.trim(),
+      });
+      setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      setEditingCategory(null);
+    } catch (err: any) {
+      setEditCatError(err.message || 'Failed to update category');
+    } finally {
+      setSavingCatEdit(false);
+    }
+  }
+
+  async function handleSaveCustCategoryEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editingCustCategory || !editCustCatName.trim()) return;
+    setSavingCustCatEdit(true);
+    setEditCustCatError(null);
+    try {
+      const updated = await api.patch<{ id: string; name: string; emoji: string | null; color: string | null; description: string | null }>(
+        `/customer-categories/${editingCustCategory.id}`,
+        {
+          name: editCustCatName.trim(),
+          emoji: editCustCatEmoji.trim() || null,
+          color: editCustCatColor || null,
+          description: editCustCatDesc.trim() || null,
+        }
+      );
+      setCustomerCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      setEditingCustCategory(null);
+    } catch (err: any) {
+      setEditCustCatError(err.message || 'Failed to update customer group');
+    } finally {
+      setSavingCustCatEdit(false);
+    }
   }
 
   async function handleAddWarranty(e: React.FormEvent) {
@@ -284,8 +354,9 @@ export function SettingsPage() {
       setNewWarrantyLabel('');
       setNewWarrantyDays('30');
       loadWarranties();
+      toast.success('Warranty period added');
     } catch (err: any) {
-      alert(err.message || 'Failed to add warranty period');
+      toast.error(err.message || 'Failed to add warranty period');
     }
   }
 
@@ -298,8 +369,9 @@ export function SettingsPage() {
       form.append('logo', file);
       const updated = await api.upload<ShopSettings>('/settings/logo', form);
       dispatch(settingsUpdated(updated));
+      toast.success('Store logo uploaded successfully');
     } catch (err: any) {
-      alert(err.message || 'Failed to upload logo');
+      toast.error(err.message || 'Failed to upload logo');
     } finally {
       setLogoUploading(false);
       e.currentTarget.value = '';
@@ -313,8 +385,9 @@ export function SettingsPage() {
     try {
       const updated = await api.patch<ShopSettings>('/settings', { logoUrl: null });
       dispatch(settingsUpdated(updated));
+      toast.success('Store logo removed');
     } catch (err: any) {
-      alert(err.message || 'Failed to remove logo');
+      toast.error(err.message || 'Failed to remove logo');
       return;
     }
 
@@ -322,19 +395,21 @@ export function SettingsPage() {
       try {
         const restored = await api.patch<ShopSettings>('/settings', { logoUrl: previousLogoUrl });
         dispatch(settingsUpdated(restored));
+        toast.success('Store logo restored');
       } catch (err: any) {
-        alert(err.message || 'Failed to restore logo');
+        toast.error(err.message || 'Failed to restore logo');
       }
     });
   }
 
   function handleSaveSettings() {
     dispatch(settingsUpdateRequested(draftSettings));
+    toast.info('Saving settings...');
   }
 
   async function handleSendTestSms() {
     if (!testPhone.trim()) {
-      alert('Please enter a mobile phone number to test (e.g. 0771234567)');
+      toast.warning('Please enter a mobile phone number to test (e.g. 0771234567)');
       return;
     }
     setTestSmsLoading(true);
@@ -344,8 +419,10 @@ export function SettingsPage() {
         phone: testPhone.trim(),
       });
       setTestSmsResult(res.message);
+      toast.success('Test SMS dispatched successfully');
     } catch (err: any) {
       setTestSmsResult(`Failed: ${err.message || 'Error sending test SMS'}`);
+      toast.error(`Failed: ${err.message || 'Error sending test SMS'}`);
     } finally {
       setTestSmsLoading(false);
     }
@@ -832,13 +909,31 @@ export function SettingsPage() {
             {categories.map((c) => (
               <div key={c.id} className="p-3 flex justify-between items-center text-xs hover:bg-surface transition-colors">
                 <span className="font-semibold text-ink">{c.name}</span>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteCategory(c.id)}
-                  className="text-rose-500 hover:text-rose-700 font-bold px-2 py-0.5 text-sm cursor-pointer"
-                >
-                  ×
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setEditingCategory(c);
+                      setEditCatName(c.name);
+                      setEditCatError(null);
+                    }}
+                    variant="secondary"
+                    className="py-1 px-2.5 text-xs font-semibold flex items-center gap-1"
+                  >
+                    <FiEdit2 className="h-3 w-3" />
+                    <span>Edit</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setCategoryToDelete(c)}
+                    className="py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 border-rose-200 dark:border-rose-900/50"
+                    title="Delete category"
+                  >
+                    <FiTrash2 className="h-3 w-3" />
+                    <span>Delete</span>
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -903,13 +998,34 @@ export function SettingsPage() {
                   </span>
                   {c.description && <span className="text-muted text-[11px] ml-2">{c.description}</span>}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteCustomerCategory(c.id)}
-                  className="text-rose-500 hover:text-rose-700 font-bold px-2 py-0.5 text-sm cursor-pointer"
-                >
-                  ×
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setEditingCustCategory(c);
+                      setEditCustCatName(c.name);
+                      setEditCustCatEmoji(c.emoji || '');
+                      setEditCustCatColor(c.color || '#3B82F6');
+                      setEditCustCatDesc(c.description || '');
+                      setEditCustCatError(null);
+                    }}
+                    variant="secondary"
+                    className="py-1 px-2.5 text-xs font-semibold flex items-center gap-1"
+                  >
+                    <FiEdit2 className="h-3 w-3" />
+                    <span>Edit</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setCustCategoryToDelete(c)}
+                    className="py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 border-rose-200 dark:border-rose-900/50"
+                    title="Delete group"
+                  >
+                    <FiTrash2 className="h-3 w-3" />
+                    <span>Delete</span>
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -1006,6 +1122,137 @@ export function SettingsPage() {
           }}
           onExpire={() => setUndoToast(null)}
         />
+      ) : null}
+      {/* Confirmation Modals */}
+      <ConfirmModal
+        isOpen={Boolean(categoryToDelete)}
+        title="Delete Product Category?"
+        message={`Are you sure you want to delete category "${categoryToDelete?.name}"? Products assigned to this category will have their category unlinked.`}
+        confirmLabel="Delete Category"
+        loading={deletingCategory}
+        onConfirm={confirmDeleteCategory}
+        onCancel={() => setCategoryToDelete(null)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(custCategoryToDelete)}
+        title="Delete Customer Group?"
+        message={`Are you sure you want to delete customer classification group "${custCategoryToDelete?.name}"?`}
+        confirmLabel="Delete Group"
+        loading={deletingCustCategory}
+        onConfirm={confirmDeleteCustomerCategory}
+        onCancel={() => setCustCategoryToDelete(null)}
+      />
+      {/* Edit Category Modal */}
+      {editingCategory ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-2xl animate-in zoom-in-95 duration-150">
+            <h3 className="font-bold text-base text-ink mb-1">Edit Product Category</h3>
+            <p className="text-xs text-muted mb-4">Update the category name for products, phones, and accessories.</p>
+            <form onSubmit={handleSaveCategoryEdit} className="space-y-4 text-xs">
+              <div>
+                <label className="text-muted block mb-1 font-semibold">Category Name *</label>
+                <Input
+                  required
+                  value={editCatName}
+                  onChange={(e) => setEditCatName(e.target.value)}
+                  className="w-full text-xs py-2"
+                  autoFocus
+                />
+              </div>
+              {editCatError ? <p className="text-danger text-[11px] font-medium">{editCatError}</p> : null}
+              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setEditingCategory(null)}
+                  className="py-1.5 px-3 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={savingCatEdit}
+                  className="py-1.5 px-4 text-xs font-bold"
+                >
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Edit Customer Group Modal */}
+      {editingCustCategory ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-2xl animate-in zoom-in-95 duration-150">
+            <h3 className="font-bold text-base text-ink mb-1">Edit Customer Classification Group</h3>
+            <p className="text-xs text-muted mb-4">Update group name, badge emoji, and color tag.</p>
+            <form onSubmit={handleSaveCustCategoryEdit} className="space-y-3 text-xs">
+              <div>
+                <label className="text-muted block mb-1 font-semibold">Group Name *</label>
+                <Input
+                  required
+                  value={editCustCatName}
+                  onChange={(e) => setEditCustCatName(e.target.value)}
+                  className="w-full text-xs py-2"
+                  autoFocus
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-muted block mb-1 font-semibold">Badge Emoji</label>
+                  <Input
+                    placeholder="e.g. ⭐ or 💎"
+                    value={editCustCatEmoji}
+                    onChange={(e) => setEditCustCatEmoji(e.target.value)}
+                    className="w-full text-xs py-2"
+                  />
+                </div>
+                <div>
+                  <label className="text-muted block mb-1 font-semibold">Badge Color</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={editCustCatColor}
+                      onChange={(e) => setEditCustCatColor(e.target.value)}
+                      className="w-10 h-8 rounded border border-border cursor-pointer p-0.5"
+                    />
+                    <span className="text-[11px] font-mono text-muted">{editCustCatColor}</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="text-muted block mb-1 font-semibold">Description (Optional)</label>
+                <Input
+                  placeholder="Notes about this classification..."
+                  value={editCustCatDesc}
+                  onChange={(e) => setEditCustCatDesc(e.target.value)}
+                  className="w-full text-xs py-2"
+                />
+              </div>
+              {editCustCatError ? <p className="text-danger text-[11px] font-medium">{editCustCatError}</p> : null}
+              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setEditingCustCategory(null)}
+                  className="py-1.5 px-3 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={savingCustCatEdit}
+                  className="py-1.5 px-4 text-xs font-bold"
+                >
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
       ) : null}
     </div>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   FiSearch,
   FiUserPlus,
@@ -35,6 +36,8 @@ import {
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { Overlay } from '../components/Overlay';
+import { api } from '../lib/api';
+import { toast } from 'react-toastify';
 
 export function CustomersPage() {
   const dispatch = useAppDispatch();
@@ -52,6 +55,7 @@ export function CustomersPage() {
     filters,
   } = useAppSelector((s) => s.customers);
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState(filters.search);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerListItem | null>(null);
@@ -65,6 +69,15 @@ export function CustomersPage() {
   const [formIsBlocked, setFormIsBlocked] = useState(false);
   const [formIsSuspended, setFormIsSuspended] = useState(false);
   const [formCategoryIds, setFormCategoryIds] = useState<string[]>([]);
+
+  // Trade-In Modal states
+  const [isTradeInModalOpen, setIsTradeInModalOpen] = useState(false);
+  const [tradeInDeviceInfo, setTradeInDeviceInfo] = useState('');
+  const [tradeInImei, setTradeInImei] = useState('');
+  const [tradeInCondition, setTradeInCondition] = useState('GOOD');
+  const [tradeInValue, setTradeInValue] = useState('');
+  const [tradeInNotes, setTradeInNotes] = useState('');
+  const [savingTradeIn, setSavingTradeIn] = useState(false);
 
   // Profile Drawer tab state
   const [activeTab, setActiveTab] = useState<
@@ -87,6 +100,45 @@ export function CustomersPage() {
     return () => clearTimeout(timer);
   }, [search, filters.search, dispatch]);
 
+  const openTradeInModal = (device?: { productName?: string; imei?: string }) => {
+    if (device) {
+      setTradeInDeviceInfo(device.productName || '');
+      setTradeInImei(device.imei || '');
+    } else {
+      setTradeInDeviceInfo('');
+      setTradeInImei('');
+    }
+    setTradeInCondition('GOOD');
+    setTradeInValue('');
+    setTradeInNotes('');
+    setIsTradeInModalOpen(true);
+  };
+
+  const handleSaveTradeIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer || !tradeInDeviceInfo.trim() || !tradeInValue) return;
+    setSavingTradeIn(true);
+    try {
+      await api.post('/trade-ins', {
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name || undefined,
+        customerPhone: selectedCustomer.phone || undefined,
+        deviceInfo: tradeInDeviceInfo.trim(),
+        imei: tradeInImei.trim() || undefined,
+        condition: tradeInCondition,
+        tradeInValue: parseFloat(tradeInValue),
+        notes: tradeInNotes.trim() || undefined,
+      });
+      toast.success('Customer device recorded as trade-in successfully!');
+      setIsTradeInModalOpen(false);
+      dispatch(customerProfileRequested(selectedCustomer.id));
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to record trade-in');
+    } finally {
+      setSavingTradeIn(false);
+    }
+  };
+
   const openCreateModal = () => {
     setEditingCustomer(null);
     setFormPhone('');
@@ -99,6 +151,24 @@ export function CustomersPage() {
     setFormCategoryIds([]);
     setIsEditModalOpen(true);
   };
+
+  useEffect(() => {
+    const registerParam = searchParams.get('register');
+    const phoneParam = searchParams.get('phone');
+    if (registerParam === 'true') {
+      setEditingCustomer(null);
+      setFormPhone(phoneParam || '');
+      setFormName('');
+      setFormNic('');
+      setFormAddress('');
+      setFormNotes('');
+      setFormIsBlocked(false);
+      setFormIsSuspended(false);
+      setFormCategoryIds([]);
+      setIsEditModalOpen(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const openEditModal = (c: CustomerListItem) => {
     setEditingCustomer(c);
@@ -635,6 +705,15 @@ export function CustomersPage() {
                               <span>Rs. {Number(item.lineTotal).toLocaleString()}</span>
                             </div>
                           ))}
+                          {(sale as any).tradeIns && (sale as any).tradeIns.length > 0 ? (
+                            <div className="border-t border-dashed border-border/60 pt-1 text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-between">
+                              <span>
+                                Trade-In Allowance: {(sale as any).tradeIns[0].deviceInfo}
+                                {(sale as any).tradeIns[0].imei ? ` (${(sale as any).tradeIns[0].imei})` : ''}
+                              </span>
+                              <span>-Rs. {Number((sale as any).tradeIns[0].tradeInValue).toLocaleString()}</span>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     ))
@@ -707,19 +786,52 @@ export function CustomersPage() {
               ) : activeTab === 'tradeins' ? (
                 /* Trade-Ins Tab */
                 <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-ink uppercase tracking-wider">
+                        Customer Trade-Ins ({selectedCustomer.tradeIns.length})
+                      </h4>
+                      <p className="text-[11px] text-muted">Devices accepted from this customer</p>
+                    </div>
+                    <Button
+                      onClick={() => openTradeInModal()}
+                      className="text-xs font-bold flex items-center gap-1 py-1 px-2.5"
+                    >
+                      <FiRefreshCw className="w-3 h-3" />
+                      <span>+ Record Trade-In</span>
+                    </Button>
+                  </div>
+
                   {selectedCustomer.tradeIns.length === 0 ? (
-                    <p className="text-xs text-muted italic">No trade-in records found for this customer.</p>
+                    <div className="p-6 text-center bg-canvas rounded-xl border border-border space-y-2">
+                      <p className="text-xs text-muted italic">No trade-in records found for this customer.</p>
+                      <Button
+                        onClick={() => openTradeInModal()}
+                        variant="secondary"
+                        className="text-xs font-bold"
+                      >
+                        + Record Trade-In Device
+                      </Button>
+                    </div>
                   ) : (
                     selectedCustomer.tradeIns.map((trade: any) => (
                       <div key={trade.id} className="p-3 rounded-lg border border-border bg-canvas space-y-1 text-xs">
                         <div className="flex items-center justify-between font-semibold">
-                          <span>{trade.deviceInfo}</span>
-                          <span className="text-emerald-600">
-                            Value: Rs. {Number(trade.tradeInValue).toLocaleString()}
+                          <span className="text-ink">{trade.deviceInfo}</span>
+                          <span className="font-mono font-bold text-emerald-600">
+                            Rs. {Number(trade.tradeInValue).toLocaleString()}
                           </span>
                         </div>
-                        {trade.imei && <p className="text-muted text-[11px]">IMEI: {trade.imei}</p>}
-                        <p className="text-muted text-[11px]">Condition: {trade.condition}</p>
+                        <div className="flex items-center justify-between text-muted text-[11px]">
+                          <span>{trade.imei ? `IMEI: ${trade.imei}` : 'No IMEI'}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-surface border border-border font-medium">
+                            {trade.condition}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-muted text-[10px] pt-1 border-t border-border/40">
+                          <span>Status: <strong className="text-ink">{trade.status}</strong></span>
+                          <span>{new Date(trade.createdAt).toLocaleDateString()}</span>
+                        </div>
                       </div>
                     ))
                   )}
@@ -727,20 +839,42 @@ export function CustomersPage() {
               ) : activeTab === 'imei' ? (
                 /* IMEI / Device History Tab */
                 <div className="space-y-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <div>
+                      <h4 className="text-xs font-bold text-ink uppercase tracking-wider">
+                        Registered Customer Devices ({selectedCustomer.imeiHistory.length})
+                      </h4>
+                      <p className="text-[11px] text-muted">Devices purchased by this customer eligible for trade-in</p>
+                    </div>
+                  </div>
+
                   {selectedCustomer.imeiHistory.length === 0 ? (
-                    <p className="text-xs text-muted italic">No serialized IMEI device records purchased.</p>
+                    <p className="text-xs text-muted italic p-4 text-center bg-canvas rounded-xl">
+                      No serialized IMEI device records purchased.
+                    </p>
                   ) : (
                     selectedCustomer.imeiHistory.map((item, idx) => (
                       <div
                         key={idx}
-                        className="p-2.5 rounded-lg border border-border bg-canvas flex items-center justify-between text-xs"
+                        className="p-3 rounded-lg border border-border bg-canvas flex items-center justify-between text-xs gap-2 hover:border-border/80 transition-all"
                       >
                         <div>
                           <div className="font-semibold text-ink">{item.productName}</div>
                           <div className="font-mono text-muted text-[11px]">IMEI: {item.imei}</div>
+                          <div className="text-muted text-[10px]">
+                            Purchased: {new Date(item.date).toLocaleDateString()}
+                          </div>
                         </div>
-                        <div className="text-muted text-[11px] text-right">
-                          {new Date(item.date).toLocaleDateString()}
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => openTradeInModal({ productName: item.productName, imei: item.imei })}
+                            className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap"
+                            title="Record this customer device as a trade-in"
+                          >
+                            <FiRefreshCw className="w-3 h-3" />
+                            <span>Trade-In This Device</span>
+                          </button>
                         </div>
                       </div>
                     ))
@@ -924,6 +1058,134 @@ export function CustomersPage() {
                 </Button>
                 <Button type="submit" variant="primary" disabled={saving}>
                   {saving ? 'Saving...' : editingCustomer ? 'Update Customer' : 'Create Customer'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Record Trade-In Device Modal */}
+      {isTradeInModalOpen && selectedCustomer && (
+        <Overlay onClose={() => setIsTradeInModalOpen(false)}>
+          <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <div>
+                <h3 className="text-base font-bold text-ink flex items-center gap-2">
+                  <FiRefreshCw className="w-4 h-4 text-emerald-600" />
+                  <span>Record Customer Trade-In Device</span>
+                </h3>
+                <p className="text-xs text-muted mt-0.5">
+                  Customer: <strong>{selectedCustomer.name || 'Customer'}</strong> ({selectedCustomer.phone})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTradeInModalOpen(false)}
+                className="text-muted hover:text-ink p-1 rounded-lg hover:bg-canvas"
+              >
+                <FiX className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTradeIn} className="space-y-3.5 text-xs">
+              {/* Option to select from purchased customer devices */}
+              {selectedCustomer.imeiHistory && selectedCustomer.imeiHistory.length > 0 && (
+                <div>
+                  <label className="block font-medium text-muted mb-1">
+                    Select from Customer's Registered Devices (Optional)
+                  </label>
+                  <select
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      const [prodName, imeiVal] = e.target.value.split('|||');
+                      setTradeInDeviceInfo(prodName || '');
+                      setTradeInImei(imeiVal || '');
+                    }}
+                    className="w-full p-2 text-xs bg-canvas border border-border rounded-lg text-ink"
+                  >
+                    <option value="">-- Choose from customer's devices or enter below --</option>
+                    {selectedCustomer.imeiHistory.map((d, i) => (
+                      <option key={i} value={`${d.productName}|||${d.imei}`}>
+                        {d.productName} (IMEI: {d.imei}) - Purchased {new Date(d.date).toLocaleDateString()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block font-medium text-muted mb-1">Device Model &amp; Specs *</label>
+                <Input
+                  required
+                  placeholder="e.g. iPhone 13 Pro 128GB Graphite"
+                  value={tradeInDeviceInfo}
+                  onChange={(e) => setTradeInDeviceInfo(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-muted mb-1">IMEI Number</label>
+                  <Input
+                    placeholder="35..."
+                    value={tradeInImei}
+                    onChange={(e) => setTradeInImei(e.target.value)}
+                    className="w-full font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-muted mb-1">Device Condition</label>
+                  <select
+                    value={tradeInCondition}
+                    onChange={(e) => setTradeInCondition(e.target.value)}
+                    className="w-full p-2 text-xs bg-canvas border border-border rounded-lg text-ink"
+                  >
+                    <option value="LIKE_NEW">Like New / Mint</option>
+                    <option value="GOOD">Good / Minor Scratches</option>
+                    <option value="FAIR">Fair / Visible Wear</option>
+                    <option value="DEFECTIVE">Needs Repair / Screen Defect</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-medium text-muted mb-1">Agreed Trade-In Value (Rs) *</label>
+                <Input
+                  required
+                  type="number"
+                  min={1}
+                  step="any"
+                  placeholder="0.00"
+                  value={tradeInValue}
+                  onChange={(e) => setTradeInValue(e.target.value)}
+                  className="w-full font-mono text-emerald-600 font-bold text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-muted mb-1">Notes / Remarks</label>
+                <textarea
+                  rows={2}
+                  placeholder="Accessories included, battery condition, scratches or remarks..."
+                  value={tradeInNotes}
+                  onChange={(e) => setTradeInNotes(e.target.value)}
+                  className="w-full p-2 text-xs bg-canvas border border-border rounded-lg text-ink resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setIsTradeInModalOpen(false)}
+                  disabled={savingTradeIn}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" disabled={savingTradeIn} className="font-bold">
+                  {savingTradeIn ? 'Recording...' : 'Accept & Record Trade-In'}
                 </Button>
               </div>
             </form>

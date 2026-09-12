@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import type { InstallmentPlanCreateInput } from '@pos/shared';
+import { decrementStockForSale } from './stockService.js';
 import { generateAgreementCode } from './agreementBarcodeService.js';
 import { executeDefaultActionsForOverduePlan } from './defaultActionService.js';
 
@@ -25,6 +26,9 @@ export async function listInstallmentPlans(filters: {
         sale: {
           include: {
             customer: true,
+            payments: {
+              orderBy: { createdAt: 'desc' },
+            },
           },
         },
       },
@@ -64,11 +68,13 @@ export async function getInstallmentPlan(id: string) {
 export async function createInstallmentPlan(input: InstallmentPlanCreateInput) {
   const sale = await prisma.sale.findUnique({
     where: { id: input.saleId },
-    include: { payments: true },
+    include: { payments: true, items: true },
   });
 
   if (!sale) throw new HttpError(404, 'Sale not found');
-  if (sale.status !== 'COMPLETED') throw new HttpError(400, 'Sale must be completed before starting installment plan');
+  if (sale.status !== 'COMPLETED' && sale.status !== 'PARKED') {
+    throw new HttpError(400, 'Sale must be completed or parked before starting installment plan');
+  }
 
   // Verify that an installment plan doesn't already exist for this sale
   const existing = await prisma.installmentPlan.findUnique({ where: { saleId: input.saleId } });
@@ -77,6 +83,86 @@ export async function createInstallmentPlan(input: InstallmentPlanCreateInput) {
   const principal = Number(sale.total) - Number(input.downPayment);
   if (principal <= 0) {
     throw new HttpError(400, 'Down payment covers the entire bill. Installment plan not required.');
+  }
+
+  // Validate required Guarantor Information
+  if (!input.guarantorName || !input.guarantorName.trim()) {
+    throw new HttpError(400, 'Guarantor Name is required');
+  }
+  if (!input.guarantorPhone || !input.guarantorPhone.trim()) {
+    throw new HttpError(400, 'Guarantor Phone is required');
+  }
+  if (!input.guarantorNic || !input.guarantorNic.trim()) {
+    throw new HttpError(400, 'Guarantor NIC is required');
+  }
+  if (!input.guarantorAddress || !input.guarantorAddress.trim()) {
+    throw new HttpError(400, 'Guarantor Address is required');
+  }
+  if (!input.guarantorConsentGiven) {
+    throw new HttpError(400, 'Guarantor consent must be acknowledged');
+  }
+
+  // If sale was PARKED from POS, finalize it: decrement stock, record down payment, and mark COMPLETED
+  if (sale.status === 'PARKED') {
+    await prisma.$transaction(async (tx) => {
+      for (const item of sale.items) {
+        await decrementStockForSale(
+          tx,
+          item.productId,
+          item.quantity,
+          sale.employeeId,
+          item.id,
+          item.serializedItemId
+        );
+      }
+      if (Number(input.downPayment) > 0) {
+        await tx.payment.create({
+          data: {
+            saleId: sale.id,
+            amount: Number(input.downPayment),
+            method: 'CASH',
+          },
+        });
+      }
+      await tx.sale.update({
+        where: { id: sale.id },
+        data: { status: 'COMPLETED' },
+      });
+    });
+  }
+
+  // Link customer to sale if customerId or customerPhone provided
+  if (input.customerId) {
+    await prisma.sale.update({
+      where: { id: input.saleId },
+      data: { customerId: input.customerId },
+    });
+  } else if (input.customerPhone && input.customerPhone.trim()) {
+    const phone = input.customerPhone.trim();
+    let cust = await prisma.customer.findUnique({ where: { phone } });
+    if (!cust) {
+      cust = await prisma.customer.create({
+        data: {
+          phone,
+          name: input.customerName || null,
+          nic: input.customerNic || null,
+          address: input.customerAddress || null,
+        },
+      });
+    } else if (input.customerName || input.customerNic || input.customerAddress) {
+      cust = await prisma.customer.update({
+        where: { id: cust.id },
+        data: {
+          name: input.customerName || cust.name,
+          nic: input.customerNic || cust.nic,
+          address: input.customerAddress || cust.address,
+        },
+      });
+    }
+    await prisma.sale.update({
+      where: { id: input.saleId },
+      data: { customerId: cust.id },
+    });
   }
 
   // Calculate Interest (Q7)
@@ -164,45 +250,68 @@ export async function recordInstallmentPayment(
   }
 
   const plan = await getInstallmentPlan(planId);
-  if (plan.status === 'COMPLETE') {
-    throw new HttpError(400, 'This installment plan is already fully paid');
+  if (plan.status === 'COMPLETE' || Number(plan.remainingBalance) <= 0) {
+    throw new HttpError(400, 'This installment plan is already fully paid and closed');
   }
 
-  const newBalance = Math.max(0, Number(plan.remainingBalance) - amount);
+  const currentBalance = Number(plan.remainingBalance);
+  // Cap payment at current balance
+  const paymentAmount = Math.min(amount, currentBalance);
+  const newBalance = Math.max(0, Math.round((currentBalance - paymentAmount) * 100) / 100);
   const isFullyPaid = newBalance === 0;
+  const paymentDate = new Date().toISOString();
 
   // Process schedule updates
   const schedule = Array.isArray(plan.scheduleJson)
     ? [...plan.scheduleJson]
     : JSON.parse(plan.scheduleJson as string);
 
-  let amountLeft = amount;
-  for (const inst of schedule) {
+  let amountLeft = paymentAmount;
+  for (let i = 0; i < schedule.length; i++) {
+    const inst = schedule[i];
     if (!inst.paid && amountLeft > 0) {
       const remainingOnInst = (inst.amount + (inst.lateFee || 0)) - (inst.paidAmount || 0);
-      if (amountLeft >= remainingOnInst) {
+      if (amountLeft >= remainingOnInst - 0.01) {
         inst.paid = true;
-        inst.paidAt = new Date().toISOString();
+        inst.paidAt = paymentDate;
         inst.paidAmount = inst.amount + (inst.lateFee || 0);
-        amountLeft -= remainingOnInst;
+        amountLeft = Math.max(0, amountLeft - remainingOnInst);
       } else {
-        inst.paidAmount = (inst.paidAmount || 0) + amountLeft;
+        inst.paidAmount = Math.round(((inst.paidAmount || 0) + amountLeft) * 100) / 100;
         amountLeft = 0;
       }
     }
   }
 
+  // If the plan is fully paid early, close and mark all remaining installments as early settlement on this date
+  if (isFullyPaid) {
+    for (const inst of schedule) {
+      if (!inst.paid) {
+        inst.paid = true;
+        inst.paidAt = paymentDate;
+        inst.paidAmount = inst.amount + (inst.lateFee || 0);
+        inst.earlySettlement = true;
+      }
+    }
+  }
+
   return prisma.$transaction(async (tx) => {
-    // Record payment against the sale
+    // 1. Record payment against the sale record so it is permanently reflected in the sale
     await tx.payment.create({
       data: {
         saleId: plan.saleId,
-        amount,
+        amount: paymentAmount,
         method: method as any,
       },
     });
 
-    // Update plan details
+    // 2. Ensure sale status is COMPLETED
+    await tx.sale.update({
+      where: { id: plan.saleId },
+      data: { status: 'COMPLETED' },
+    });
+
+    // 3. Update installment plan details
     const updated = await tx.installmentPlan.update({
       where: { id: plan.id },
       data: {
@@ -214,7 +323,14 @@ export async function recordInstallmentPayment(
         sale: {
           include: {
             customer: true,
-            payments: true,
+            payments: {
+              orderBy: { createdAt: 'desc' },
+            },
+            items: {
+              include: {
+                product: true,
+              },
+            },
           },
         },
       },

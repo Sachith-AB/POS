@@ -30,9 +30,18 @@ export async function updateCategory(id: string, input: Partial<CategoryInput>) 
 }
 
 export async function deleteCategory(id: string) {
-  const count = await prisma.product.count({ where: { categoryId: id } });
+  const cat = await prisma.category.findUnique({ where: { id } });
+  if (!cat) throw new HttpError(404, 'Category not found');
+  const count = await prisma.product.count({
+    where: {
+      OR: [
+        { categoryId: id },
+        { category: cat.name },
+      ],
+    },
+  });
   if (count > 0) {
-    throw new HttpError(400, 'Cannot delete category that contains products');
+    throw new HttpError(400, `Cannot delete category "${cat.name}" because ${count} product(s) are assigned to it. Reassign or delete those products first.`);
   }
   return prisma.category.delete({ where: { id } });
 }

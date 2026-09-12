@@ -26,16 +26,31 @@ export async function getTradeIn(id: string) {
 }
 
 export async function createTradeIn(input: TradeInInput) {
-  // If phone is provided, find or link customer
-  let customerId = input.customerId;
-  if (!customerId && input.customerPhone) {
-    let customer = await prisma.customer.findUnique({ where: { phone: input.customerPhone } });
+  let customerId = input.customerId?.trim() || null;
+  let customerPhone = input.customerPhone?.trim() || null;
+  let customerName = input.customerName?.trim() || null;
+
+  // Resolve customer if customerId is provided
+  if (customerId) {
+    const existingCust = await prisma.customer.findUnique({ where: { id: customerId } });
+    if (existingCust) {
+      if (!customerPhone) customerPhone = existingCust.phone;
+      if (!customerName) customerName = existingCust.name;
+    }
+  } else if (customerPhone) {
+    // Lookup by phone or create customer
+    let customer = await prisma.customer.findUnique({ where: { phone: customerPhone } });
     if (!customer) {
       customer = await prisma.customer.create({
         data: {
-          phone: input.customerPhone,
-          name: input.customerName || null,
+          phone: customerPhone,
+          name: customerName || null,
         },
+      });
+    } else if (customerName && !customer.name) {
+      await prisma.customer.update({
+        where: { id: customer.id },
+        data: { name: customerName },
       });
     }
     customerId = customer.id;
@@ -44,15 +59,15 @@ export async function createTradeIn(input: TradeInInput) {
   return prisma.tradeIn.create({
     data: {
       customerId: customerId || null,
-      customerPhone: input.customerPhone || null,
-      customerName: input.customerName || null,
-      deviceInfo: input.deviceInfo,
-      imei: input.imei || null,
+      customerPhone: customerPhone || null,
+      customerName: customerName || null,
+      deviceInfo: input.deviceInfo.trim(),
+      imei: input.imei?.trim() || null,
       condition: input.condition,
       tradeInValue: input.tradeInValue,
       saleId: input.saleId || null,
       status: input.saleId ? 'ADJUSTED' : 'PENDING',
-      notes: input.notes || null,
+      notes: input.notes?.trim() || null,
     },
     include: { customer: true },
   });
@@ -66,7 +81,7 @@ export async function convertTradeInToInventory(
   data: {
     sku?: string;
     barcode?: string;
-    name: string;
+    name?: string;
     sellPrice: number;
     wholesalePrice?: number;
     category?: string;
@@ -78,8 +93,9 @@ export async function convertTradeInToInventory(
     throw new HttpError(400, 'This trade-in device has already been added to inventory');
   }
 
-  const sku = data.sku || `USED-${tradeIn.imei || Date.now().toString().slice(-6)}`;
-  const barcode = data.barcode || (tradeIn.imei ? `BAR-${tradeIn.imei}` : sku);
+  const productName = (data.name && data.name.trim()) ? data.name.trim() : tradeIn.deviceInfo;
+  const sku = data.sku?.trim() || `USED-${tradeIn.imei || Date.now().toString().slice(-6)}`;
+  const barcode = data.barcode?.trim() || (tradeIn.imei ? `BAR-${tradeIn.imei}` : sku);
 
   return prisma.$transaction(async (tx) => {
     // 1. Create product as used item
@@ -87,7 +103,7 @@ export async function convertTradeInToInventory(
       data: {
         sku,
         barcode,
-        name: data.name,
+        name: productName,
         costPrice: tradeIn.tradeInValue, // Cost is what we paid/credited for trade-in
         sellPrice: data.sellPrice,
         wholesalePrice: data.wholesalePrice || null,

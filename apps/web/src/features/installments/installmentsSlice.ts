@@ -126,6 +126,11 @@ const installmentsSlice = createSlice({
       state,
       _action: PayloadAction<{
         saleId: string;
+        customerId?: string;
+        customerPhone?: string;
+        customerName?: string;
+        customerNic?: string;
+        customerAddress?: string;
         downPayment: number;
         numberOfInstallments: number;
         intervalDays: number;

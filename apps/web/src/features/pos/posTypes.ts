@@ -8,6 +8,36 @@ export interface CartLine {
   wholesalePrice?: number | null;
   businessPrice?: number | null;
   priceType?: 'RETAIL' | 'WHOLESALE' | 'BUSINESS';
+  isSerialized?: boolean;
+  serializedItemId?: string | null;
+  imei?: string | null;
+}
+
+export interface CustomerCategoryItem {
+  id: string;
+  name: string;
+  emoji?: string | null;
+  color?: string | null;
+}
+
+export interface CustomerMatchedData {
+  id: string;
+  phone: string;
+  name: string | null;
+  nic?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  isBlocked?: boolean;
+  isSuspended?: boolean;
+  categories?: Array<{ category: CustomerCategoryItem }>;
+}
+
+export interface TradeInDeviceDetails {
+  id?: string;
+  deviceInfo: string;
+  imei?: string | null;
+  condition?: string;
+  tradeInValue: number;
 }
 
 export interface BillSlot {
@@ -18,9 +48,11 @@ export interface BillSlot {
   customerPhone: string;
   customerId: string | null;
   customerName: string | null;
+  customerDetails?: CustomerMatchedData | null;
   warrantyPeriodId?: string | null;
   tradeInId?: string | null;
   tradeInValue?: number;
+  tradeInDevice?: TradeInDeviceDetails | null;
 }
 
 export function emptyBillSlot(): BillSlot {
@@ -32,9 +64,11 @@ export function emptyBillSlot(): BillSlot {
     customerPhone: '',
     customerId: null,
     customerName: null,
+    customerDetails: null,
     warrantyPeriodId: null,
     tradeInId: null,
     tradeInValue: 0,
+    tradeInDevice: null,
   };
 }
 

@@ -4,14 +4,36 @@ import { asyncHandler, HttpError } from '../middleware/errorHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
   createProduct,
+  deleteProduct,
+  getMobileByImei,
   getProductByBarcode,
   listDeadStock,
   listLowStock,
+  listMobilePhones,
   listProducts,
   updateProduct,
 } from '../services/productService.js';
 
 const router = Router();
+
+router.get(
+  '/mobiles',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    res.json(await listMobilePhones({ search }));
+  })
+);
+
+router.get(
+  '/imei/:imei',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const mobile = await getMobileByImei(req.params.imei);
+    if (!mobile) throw new HttpError(404, 'Mobile phone with this IMEI not found in stock');
+    res.json(mobile);
+  })
+);
 
 router.get(
   '/',
@@ -65,6 +87,14 @@ router.patch(
   asyncHandler(async (req, res) => {
     const input = productUpdateSchema.parse(req.body);
     res.json(await updateProduct(req.params.id, input));
+  })
+);
+
+router.delete(
+  '/:id',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json(await deleteProduct(req.params.id));
   })
 );
 

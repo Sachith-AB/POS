@@ -3,8 +3,37 @@ import { prisma } from '../lib/prisma.js';
 import { HttpError } from '../middleware/errorHandler.js';
 
 export async function findCustomerByPhone(phone: string) {
-  return prisma.customer.findUnique({
-    where: { phone },
+  const trimmed = phone.trim();
+  if (!trimmed) return null;
+
+  const digitsOnly = trimmed.replace(/\D/g, '');
+  const variants = new Set<string>([trimmed]);
+  if (digitsOnly) {
+    variants.add(digitsOnly);
+    if (digitsOnly.startsWith('94') && digitsOnly.length === 11) {
+      variants.add('0' + digitsOnly.slice(2));
+      variants.add(digitsOnly.slice(2));
+      variants.add('+' + digitsOnly);
+    } else if (digitsOnly.startsWith('0') && digitsOnly.length === 10) {
+      variants.add(digitsOnly.slice(1));
+      variants.add('94' + digitsOnly.slice(1));
+      variants.add('+94' + digitsOnly.slice(1));
+    } else if (digitsOnly.length === 9) {
+      variants.add('0' + digitsOnly);
+      variants.add('94' + digitsOnly);
+      variants.add('+94' + digitsOnly);
+    }
+  }
+
+  const orConditions: any[] = [{ phone: { in: Array.from(variants) } }];
+  if (digitsOnly && digitsOnly.length >= 4) {
+    orConditions.push({ phone: { contains: digitsOnly } });
+  }
+
+  return prisma.customer.findFirst({
+    where: {
+      OR: orConditions,
+    },
     include: {
       categories: {
         include: {

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { saleCreateSchema, paymentCreateSchema } from '@pos/shared';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { requireAuth } from '../middleware/auth.js';
-import { completeSale, createSale, getSale, listParkedSales, updateSaleItems, voidSale } from '../services/saleService.js';
+import { completeSale, createSale, getSale, listParkedSales, listSales, updateSaleItems, voidSale } from '../services/saleService.js';
 
 const router = Router();
 
@@ -11,6 +11,17 @@ router.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     res.json(await listParkedSales(req.session!.employeeId));
+  })
+);
+
+router.get(
+  '/',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    res.json(await listSales({ search, status, limit }));
   })
 );
 
@@ -31,7 +42,14 @@ router.post(
   })
 );
 
-const updateSchema = saleCreateSchema.pick({ items: true, discount: true, customerId: true });
+const updateSchema = saleCreateSchema.pick({
+  items: true,
+  discount: true,
+  discountPercent: true,
+  customerId: true,
+  warrantyPeriodId: true,
+  tradeInId: true,
+});
 
 router.patch(
   '/:id',

@@ -1,7 +1,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import { MAX_PARKED_BILLS } from '@pos/shared';
 import { loggedOut } from '../auth/authSlice';
-import { type BillSlot, type CartLine, emptyBillSlot } from './posTypes';
+import { type BillSlot, type CartLine, type CustomerMatchedData, type TradeInDeviceDetails, emptyBillSlot } from './posTypes';
 
 export interface PosState {
   bills: BillSlot[];
@@ -9,8 +9,11 @@ export interface PosState {
   priceCheckMode: boolean;
   saving: boolean;
   completing: boolean;
+  customerSearching: boolean;
+  customerSearched: boolean;
   lastRemoved: { billIndex: number; line: CartLine } | null;
   lastCompleted: ReceiptSnapshot | null;
+  lastCompletedBill: { billIndex: number; bill: BillSlot; total: number; saleId: string } | null;
   error: string | null;
 }
 
@@ -20,7 +23,14 @@ export interface ReceiptSnapshot {
   discount: number;
   total: number;
   customerName: string | null;
+  customerPhone?: string | null;
+  customerAddress?: string | null;
+  customerNic?: string | null;
   completedAt: string;
+  tenderedAmount?: number;
+  changeAmount?: number;
+  tradeInDeduction?: number;
+  tradeInDevice?: TradeInDeviceDetails | null;
 }
 
 
@@ -30,8 +40,11 @@ const initialState: PosState = {
   priceCheckMode: false,
   saving: false,
   completing: false,
+  customerSearching: false,
+  customerSearched: false,
   lastRemoved: null,
   lastCompleted: null,
+  lastCompletedBill: null,
   error: null,
 };
 
@@ -65,10 +78,52 @@ const posSlice = createSlice({
         });
       }
     },
+    serializedItemAdded(
+      state,
+      action: PayloadAction<{
+        productId: string;
+        name: string;
+        barcode?: string | null;
+        unitPrice: number;
+        retailPrice?: number;
+        wholesalePrice?: number | null;
+        businessPrice?: number | null;
+        priceType?: 'RETAIL' | 'WHOLESALE' | 'BUSINESS';
+        serializedItemId: string;
+        imei: string;
+      }>
+    ) {
+      const bill = state.bills[state.activeIndex];
+      const existingImei = bill.items.find((i) => i.serializedItemId === action.payload.serializedItemId);
+      if (existingImei) return;
+
+      bill.items.push({
+        ...action.payload,
+        quantity: 1,
+        isSerialized: true,
+        retailPrice: action.payload.retailPrice ?? action.payload.unitPrice,
+        priceType: action.payload.priceType ?? 'RETAIL',
+      });
+    },
+    lineImeiSelected(
+      state,
+      action: PayloadAction<{
+        productId: string;
+        serializedItemId: string;
+        imei: string;
+      }>
+    ) {
+      const bill = state.bills[state.activeIndex];
+      const line = bill.items.find((i) => i.productId === action.payload.productId);
+      if (line) {
+        line.serializedItemId = action.payload.serializedItemId;
+        line.imei = action.payload.imei;
+      }
+    },
     lineQuantityChanged(state, action: PayloadAction<{ productId: string; quantity: number }>) {
       const bill = state.bills[state.activeIndex];
       const line = bill.items.find((i) => i.productId === action.payload.productId);
-      if (line) line.quantity = Math.max(1, action.payload.quantity);
+      if (line) line.quantity = Math.max(0, action.payload.quantity);
     },
     linePriceChanged(state, action: PayloadAction<{ productId: string; unitPrice: number }>) {
       const bill = state.bills[state.activeIndex];
@@ -92,9 +147,11 @@ const posSlice = createSlice({
         }
       }
     },
-    lineRemoved(state, action: PayloadAction<{ productId: string }>) {
+    lineRemoved(state, action: PayloadAction<{ productId: string; serializedItemId?: string | null }>) {
       const bill = state.bills[state.activeIndex];
-      const idx = bill.items.findIndex((i) => i.productId === action.payload.productId);
+      const idx = action.payload.serializedItemId
+        ? bill.items.findIndex((i) => i.serializedItemId === action.payload.serializedItemId)
+        : bill.items.findIndex((i) => i.productId === action.payload.productId);
       if (idx >= 0) {
         state.lastRemoved = { billIndex: state.activeIndex, line: bill.items[idx] };
         bill.items.splice(idx, 1);
@@ -124,27 +181,68 @@ const posSlice = createSlice({
     warrantySelected(state, action: PayloadAction<string | null>) {
       state.bills[state.activeIndex].warrantyPeriodId = action.payload;
     },
-    tradeInApplied(state, action: PayloadAction<{ tradeInId: string | null; tradeInValue: number }>) {
+    tradeInApplied(
+      state,
+      action: PayloadAction<{
+        tradeInId: string | null;
+        tradeInValue: number;
+        tradeInDevice?: TradeInDeviceDetails | null;
+      }>
+    ) {
       const bill = state.bills[state.activeIndex];
       bill.tradeInId = action.payload.tradeInId;
       bill.tradeInValue = action.payload.tradeInValue;
+      bill.tradeInDevice = action.payload.tradeInDevice ?? null;
+    },
+    customerSearchStarted(state) {
+      state.customerSearching = true;
+    },
+    customerSearchFinished(state) {
+      state.customerSearching = false;
+    },
+    customerLookupReset(state) {
+      const bill = state.bills[state.activeIndex];
+      bill.customerId = null;
+      bill.customerName = null;
+      bill.customerDetails = null;
+      state.customerSearching = false;
+      state.customerSearched = false;
     },
     customerPhoneChanged(state, action: PayloadAction<string>) {
-      state.bills[state.activeIndex].customerPhone = action.payload;
+      const bill = state.bills[state.activeIndex];
+      bill.customerPhone = action.payload;
+      state.customerSearched = false;
+      if (!action.payload.trim()) {
+        bill.customerId = null;
+        bill.customerName = null;
+        bill.customerDetails = null;
+        state.customerSearching = false;
+      }
     },
-    customerMatched(state, action: PayloadAction<{ id: string; name: string | null } | null>) {
+    customerMatched(state, action: PayloadAction<CustomerMatchedData | null>) {
       const bill = state.bills[state.activeIndex];
       bill.customerId = action.payload?.id ?? null;
       bill.customerName = action.payload?.name ?? null;
+      bill.customerDetails = action.payload ?? null;
+      state.customerSearching = false;
+      state.customerSearched = true;
     },
     activeBillSwitched(state, action: PayloadAction<number>) {
       state.activeIndex = action.payload;
+      state.customerSearching = false;
+      state.customerSearched = Boolean(
+        state.bills[action.payload]?.customerPhone && !state.bills[action.payload]?.customerId
+      );
     },
     billSaleIdAssigned(state, action: PayloadAction<{ billIndex: number; saleId: string }>) {
       state.bills[action.payload.billIndex].saleId = action.payload.saleId;
     },
     billCleared(state, action: PayloadAction<number>) {
       state.bills[action.payload] = emptyBillSlot();
+      if (state.activeIndex === action.payload) {
+        state.customerSearching = false;
+        state.customerSearched = false;
+      }
     },
     billResumed(state, action: PayloadAction<{ billIndex: number; bill: BillSlot }>) {
       state.bills[action.payload.billIndex] = action.payload.bill;
@@ -160,7 +258,10 @@ const posSlice = createSlice({
     savingFinished(state) {
       state.saving = false;
     },
-    saleCompleteRequested(_state, _action: PayloadAction<{ amount: number; method: string }>) {},
+    saleCompleteRequested(
+      _state,
+      _action: PayloadAction<{ amount: number; method: string; tenderedAmount?: number; changeAmount?: number }>
+    ) {},
     completingStarted(state) {
       state.completing = true;
       state.error = null;
@@ -168,11 +269,34 @@ const posSlice = createSlice({
     saleCompleted(state, action: PayloadAction<ReceiptSnapshot>) {
       state.completing = false;
       state.lastCompleted = action.payload;
+      state.lastCompletedBill = {
+        billIndex: state.activeIndex,
+        bill: {
+          ...state.bills[state.activeIndex],
+          items: state.bills[state.activeIndex].items.map((i) => ({ ...i })),
+        },
+        total: action.payload.total,
+        saleId: action.payload.id,
+      };
       state.bills[state.activeIndex] = emptyBillSlot();
     },
     saleCompleteFailed(state, action: PayloadAction<string>) {
       state.completing = false;
       state.error = action.payload;
+    },
+    saleUndone(state) {
+      if (!state.lastCompletedBill) return;
+      const { billIndex, bill } = state.lastCompletedBill;
+      state.bills[billIndex] = {
+        ...bill,
+        saleId: null,
+      };
+      state.activeIndex = billIndex;
+      state.lastCompleted = null;
+      state.lastCompletedBill = null;
+    },
+    lastCompletedBillCleared(state) {
+      state.lastCompletedBill = null;
     },
     lastCompletedCleared(state) {
       state.lastCompleted = null;
@@ -188,6 +312,8 @@ const posSlice = createSlice({
 
 export const {
   itemScanned,
+  serializedItemAdded,
+  lineImeiSelected,
   lineQuantityChanged,
   linePriceChanged,
   linePriceTypeChanged,
@@ -198,6 +324,9 @@ export const {
   discountPercentChanged,
   warrantySelected,
   tradeInApplied,
+  customerSearchStarted,
+  customerSearchFinished,
+  customerLookupReset,
   customerPhoneChanged,
   customerMatched,
   activeBillSwitched,
@@ -211,6 +340,8 @@ export const {
   completingStarted,
   saleCompleted,
   saleCompleteFailed,
+  saleUndone,
+  lastCompletedBillCleared,
   lastCompletedCleared,
   cartAutosaveRequested,
 } = posSlice.actions;

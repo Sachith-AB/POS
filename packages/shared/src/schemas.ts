@@ -238,17 +238,22 @@ export type RepairTicketUpdateInput = z.infer<typeof repairTicketUpdateSchema>;
 
 export const installmentPlanCreateSchema = z.object({
   saleId: z.string().min(1),
+  customerId: z.string().nullable().optional(),
+  customerPhone: z.string().nullable().optional(),
+  customerName: z.string().nullable().optional(),
+  customerNic: z.string().nullable().optional(),
+  customerAddress: z.string().nullable().optional(),
   downPayment: z.number().nonnegative(),
   numberOfInstallments: z.number().int().positive(),
   intervalDays: z.number().int().positive(),
   interestMethod: z.enum(INTEREST_METHODS).optional().default('PERCENTAGE'),
   interestValue: z.number().nonnegative().optional().default(0),
-  guarantorName: z.string().max(120).nullable().optional(),
-  guarantorNic: z.string().max(30).nullable().optional(),
-  guarantorPhone: z.string().max(20).nullable().optional(),
-  guarantorAddress: z.string().max(500).nullable().optional(),
+  guarantorName: z.string().min(1, 'Guarantor Name is required').max(120),
+  guarantorNic: z.string().min(1, 'Guarantor NIC is required').max(30),
+  guarantorPhone: z.string().min(1, 'Guarantor Phone is required').max(20),
+  guarantorAddress: z.string().min(1, 'Guarantor Address is required').max(500),
   guarantorPhotoUrl: z.string().nullable().optional(),
-  guarantorConsentGiven: z.boolean().optional().default(false),
+  guarantorConsentGiven: z.boolean().default(false),
 });
 export type InstallmentPlanCreateInput = z.infer<typeof installmentPlanCreateSchema>;
 
@@ -279,7 +284,7 @@ export type WarrantyPeriodInput = z.infer<typeof warrantyPeriodSchema>;
 export const supplierSchema = z.object({
   name: z.string().min(1).max(120),
   phone: z.string().max(20).nullable().optional(),
-  email: z.string().email().nullable().optional(),
+  email: z.string().email().nullable().optional().or(z.literal('')),
   address: z.string().max(255).nullable().optional(),
   notes: z.string().max(1000).nullable().optional(),
 });
@@ -301,6 +306,7 @@ export const supplierReturnSchema = z.object({
   quantity: z.number().int().positive(),
   reason: z.enum(SUPPLIER_RETURN_REASONS),
   serializedItemId: z.string().nullable().optional(),
+  refundOrCreditAmount: z.number().nonnegative().nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
 });
 export type SupplierReturnInput = z.infer<typeof supplierReturnSchema>;

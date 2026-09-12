@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import multer from 'multer';
+import path from 'node:path';
+import fs from 'node:fs';
 import { installmentPlanCreateSchema, installmentPaymentSchema } from '@pos/shared';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -11,6 +14,42 @@ import {
 import { z } from 'zod';
 
 const router = Router();
+
+const uploadsDir = process.env.UPLOADS_DIR ?? './uploads';
+const guarantorsUploadsDir = path.join(uploadsDir, 'guarantors');
+
+if (!fs.existsSync(guarantorsUploadsDir)) {
+  fs.mkdirSync(guarantorsUploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, guarantorsUploadsDir);
+  },
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname) || '.jpg';
+    cb(null, `guarantor-${uniqueSuffix}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+
+router.post(
+  '/upload-photo',
+  requireAuth,
+  upload.single('photo'),
+  asyncHandler(async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No photo uploaded' });
+    }
+    const photoUrl = `/uploads/guarantors/${req.file.filename}`;
+    res.json({ url: photoUrl });
+  })
+);
 
 // 1. List installment plans
 router.get(

@@ -15,7 +15,9 @@ export interface StockState {
   notFoundBarcode: string | null;
   pendingLines: PendingReceiveLine[];
   supplierName: string;
+  supplierId: string;
   invoiceRef: string;
+  isCreditPurchase: boolean;
   submitting: boolean;
   lastBatchCount: number | null;
 }
@@ -25,7 +27,9 @@ const initialState: StockState = {
   notFoundBarcode: null,
   pendingLines: [],
   supplierName: '',
+  supplierId: '',
   invoiceRef: '',
+  isCreditPurchase: true,
   submitting: false,
   lastBatchCount: null,
 };
@@ -78,8 +82,14 @@ const stockSlice = createSlice({
     supplierNameChanged(state, action: PayloadAction<string>) {
       state.supplierName = action.payload;
     },
+    supplierIdChanged(state, action: PayloadAction<string>) {
+      state.supplierId = action.payload;
+    },
     invoiceRefChanged(state, action: PayloadAction<string>) {
       state.invoiceRef = action.payload;
+    },
+    isCreditPurchaseChanged(state, action: PayloadAction<boolean>) {
+      state.isCreditPurchase = action.payload;
     },
     batchSubmitRequested(state) {
       state.submitting = true;
@@ -89,7 +99,9 @@ const stockSlice = createSlice({
       state.lastBatchCount = state.pendingLines.length;
       state.pendingLines = [];
       state.supplierName = '';
+      state.supplierId = '';
       state.invoiceRef = '';
+      state.isCreditPurchase = true;
     },
     batchSubmitFailed(state) {
       state.submitting = false;
@@ -108,7 +120,9 @@ export const {
   lineAdded,
   lineRemoved,
   supplierNameChanged,
+  supplierIdChanged,
   invoiceRefChanged,
+  isCreditPurchaseChanged,
   batchSubmitRequested,
   batchSubmitted,
   batchSubmitFailed,
