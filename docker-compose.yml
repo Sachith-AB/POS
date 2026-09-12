@@ -1,0 +1,101 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# POS System — Docker Compose Template
+#
+# USAGE FOR MULTIPLE SHOPS:
+#   Shop 1: uses this file as-is          → pos.yaga.lk
+#   Shop 2: copy to docker-compose.shop2.yml, change:
+#             - COMPOSE_PROJECT_NAME → pos_shop2
+#             - All host ports (4001, 5101, 5432→5433 if exposed)
+#             - DB name, volumes, container names
+#
+# BUILD & RUN:
+#   docker compose build
+#   docker compose up -d
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: pos_shop1
+
+services:
+
+  # ── PostgreSQL Database ────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-pos_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-pos_shop1}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-pos_user} -d ${DB_NAME:-pos_shop1}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pos_internal
+
+  # ── Backend API Server ─────────────────────────────────────────────────────
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-pos_user}:${DB_PASSWORD}@db:5432/${DB_NAME:-pos_shop1}?schema=public
+      PORT: 4000
+      JWT_SECRET: ${JWT_SECRET}
+      UPLOADS_DIR: /app/uploads
+      BACKUPS_DIR: /app/backups
+      CORS_ORIGIN: https://${DOMAIN:-pos.yaga.lk}
+      SMS_PROVIDER: ${SMS_PROVIDER:-stub}
+      SMS_API_KEY: ${SMS_API_KEY:-}
+      SMS_SENDER_ID: ${SMS_SENDER_ID:-}
+      OWNER_PHONE: ${OWNER_PHONE:-}
+      DAILY_SUMMARY_CRON: ${DAILY_SUMMARY_CRON:-0 21 * * *}
+      BACKUP_CRON: ${BACKUP_CRON:-0 2 * * *}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    volumes:
+      - uploads_data:/app/uploads
+      - backups_data:/app/backups
+    expose:
+      - "4000"
+    networks:
+      - pos_internal
+      - nginx_proxy_network
+
+  # ── Frontend (Nginx serving built React app) ───────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Not needed at runtime since nginx proxies /api — but kept for reference
+        VITE_API_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - server
+    expose:
+      - "80"
+    networks:
+      - pos_internal
+      - nginx_proxy_network
+
+volumes:
+  db_data:
+    name: pos_shop1_db_data
+  uploads_data:
+    name: pos_shop1_uploads
+  backups_data:
+    name: pos_shop1_backups
+
+networks:
+  pos_internal:
+    name: pos_shop1_internal
+  # This must match the network name used by Nginx Proxy Manager on your VPS
+  nginx_proxy_network:
+    external: true
+    name: nginx_proxy_network
