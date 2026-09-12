@@ -22,7 +22,7 @@ jobs:
           script: |
             cd /opt/pos/shop1
             # Pull the latest changes from GitHub
-            git pull origin main
+            git pull origin vps
             
             # Rebuild the Docker containers and start them
             docker compose build
