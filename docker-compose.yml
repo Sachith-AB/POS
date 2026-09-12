@@ -73,8 +73,8 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        # Not needed at runtime since nginx proxies /api — but kept for reference
-        VITE_API_URL: ""
+        # Pass /api so the frontend knows to prefix requests for Nginx proxy
+        VITE_API_URL: "/api"
     restart: unless-stopped
     depends_on:
       - server
