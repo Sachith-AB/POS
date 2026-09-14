@@ -20,7 +20,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /opt/pos/shop1
+            cd /opt/pos_shop1
             # Pull the latest changes from GitHub
             git pull origin vps
             
