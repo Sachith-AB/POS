@@ -87,6 +87,16 @@ export function ReceiveStockPanel() {
   const [creatingCategory, setCreatingCategory] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
 
+  // Quick Add Supplier State (preserves product draft while creating supplier)
+  const [showNewSupplierModal, setShowNewSupplierModal] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState('');
+  const [newSupplierPhone, setNewSupplierPhone] = useState('');
+  const [newSupplierEmail, setNewSupplierEmail] = useState('');
+  const [newSupplierAddress, setNewSupplierAddress] = useState('');
+  const [newSupplierNotes, setNewSupplierNotes] = useState('');
+  const [creatingSupplier, setCreatingSupplier] = useState(false);
+  const [supplierError, setSupplierError] = useState<string | null>(null);
+
   async function handleCreateNewCategory(e?: React.FormEvent) {
     if (e) e.preventDefault();
     const trimmed = newCategoryName.trim();
@@ -114,6 +124,53 @@ export function ReceiveStockPanel() {
     } finally {
       setCreatingCategory(false);
     }
+  }
+
+  async function handleCreateNewSupplier(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    const trimmed = newSupplierName.trim();
+    if (!trimmed) return;
+
+    // Check if supplier already exists
+    const existing = suppliers.find((s) => s.name.toLowerCase() === trimmed.toLowerCase());
+    if (existing) {
+      dispatch(supplierIdChanged(existing.id));
+      dispatch(supplierNameChanged(existing.name));
+      setShowNewSupplierModal(false);
+      resetSupplierForm();
+      return;
+    }
+
+    setCreatingSupplier(true);
+    setSupplierError(null);
+    try {
+      const created = await api.post<SupplierItem>('/suppliers', {
+        name: trimmed,
+        phone: newSupplierPhone.trim() || null,
+        email: newSupplierEmail.trim() || null,
+        address: newSupplierAddress.trim() || null,
+        notes: newSupplierNotes.trim() || null,
+      });
+      setSuppliers((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      dispatch(supplierIdChanged(created.id));
+      dispatch(supplierNameChanged(created.name));
+      setShowNewSupplierModal(false);
+      resetSupplierForm();
+      toast.success(`Supplier "${created.name}" created & selected`);
+    } catch (err: any) {
+      setSupplierError(err.message || 'Failed to create supplier');
+    } finally {
+      setCreatingSupplier(false);
+    }
+  }
+
+  function resetSupplierForm() {
+    setNewSupplierName('');
+    setNewSupplierPhone('');
+    setNewSupplierEmail('');
+    setNewSupplierAddress('');
+    setNewSupplierNotes('');
+    setSupplierError(null);
   }
 
   const scanRef = useRef<HTMLInputElement>(null);
@@ -754,7 +811,19 @@ export function ReceiveStockPanel() {
         <div className="space-y-2 mb-4 bg-canvas p-3 rounded-xl border border-border">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[10px] font-semibold text-muted block mb-0.5">Supplier</label>
+              <div className="flex items-center justify-between mb-0.5">
+                <label className="text-[10px] font-semibold text-muted block">Supplier</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetSupplierForm();
+                    setShowNewSupplierModal(true);
+                  }}
+                  className="text-[10px] font-semibold text-primary hover:underline flex items-center gap-0.5 cursor-pointer"
+                >
+                  + New Supplier
+                </button>
+              </div>
               <select
                 value={supplierId}
                 onChange={(e) => {
@@ -946,6 +1015,107 @@ export function ReceiveStockPanel() {
                   className="text-xs font-bold"
                 >
                   Create &amp; Select
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Quick Add Supplier Modal — product form state preserved */}
+      {showNewSupplierModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-xl">
+            <h3 className="font-bold text-sm text-ink mb-1">Quick Add Supplier</h3>
+            <p className="text-xs text-muted mb-3">
+              Create a new supplier without leaving the product form. Your entered product details are saved as a draft.
+            </p>
+
+            {/* Draft indicator */}
+            {(quickName || quickCost || quickSell) ? (
+              <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] text-emerald-600 mb-3">
+                <FiCheckCircle className="h-3 w-3 shrink-0" />
+                <span>Product draft saved: <strong>{quickName || 'Untitled'}</strong> — your data will be preserved.</span>
+              </div>
+            ) : null}
+
+            <form onSubmit={handleCreateNewSupplier} className="space-y-3 text-xs">
+              <div>
+                <label className="text-muted block mb-1 font-medium">Supplier Name *</label>
+                <Input
+                  autoFocus
+                  required
+                  placeholder="e.g. Samsung Sri Lanka, Mobile Parts LK..."
+                  value={newSupplierName}
+                  onChange={(e) => setNewSupplierName(e.target.value)}
+                  className="w-full text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-muted block mb-1 font-medium">Phone</label>
+                  <Input
+                    placeholder="07XXXXXXXX"
+                    value={newSupplierPhone}
+                    onChange={(e) => setNewSupplierPhone(e.target.value)}
+                    className="w-full text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-muted block mb-1 font-medium">Email</label>
+                  <Input
+                    type="email"
+                    placeholder="supplier@example.com"
+                    value={newSupplierEmail}
+                    onChange={(e) => setNewSupplierEmail(e.target.value)}
+                    className="w-full text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-muted block mb-1 font-medium">Address</label>
+                <Input
+                  placeholder="Business address (optional)"
+                  value={newSupplierAddress}
+                  onChange={(e) => setNewSupplierAddress(e.target.value)}
+                  className="w-full text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-muted block mb-1 font-medium">Notes</label>
+                <textarea
+                  rows={2}
+                  placeholder="Payment terms, contact person, etc."
+                  value={newSupplierNotes}
+                  onChange={(e) => setNewSupplierNotes(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-canvas px-3 py-1.5 text-xs text-ink focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              {supplierError ? <p className="text-[11px] text-danger">{supplierError}</p> : null}
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setShowNewSupplierModal(false);
+                    setSupplierError(null);
+                  }}
+                  variant="secondary"
+                  className="text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={creatingSupplier}
+                  disabled={!newSupplierName.trim()}
+                  className="text-xs font-bold"
+                >
+                  Create & Select Supplier
                 </Button>
               </div>
             </form>

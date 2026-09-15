@@ -60,7 +60,7 @@ export function A5RepairBill({ ticket }: A5RepairBillProps) {
           <p className="text-gray-800 italic pl-1">{ticket.issue}</p>
         </div>
 
-        {/* Pricing Summary */}
+      {/* Pricing Summary */}
         <div className="mt-2 grid grid-cols-3 gap-2 bg-gray-100 p-2 rounded text-center border border-gray-300">
           <div>
             <span className="text-[10px] text-gray-600 block">Total Estimate</span>
@@ -73,7 +73,11 @@ export function A5RepairBill({ ticket }: A5RepairBillProps) {
 
           <div>
             <span className="text-[10px] text-gray-600 block">Remaining Balance</span>
-            <span className="font-mono font-extrabold text-sm text-rose-700">Rs {bal.toFixed(2)}</span>
+            {ticket.status === 'DELIVERED' ? (
+              <span className="font-mono font-extrabold text-sm text-emerald-700">PAID ✓</span>
+            ) : (
+              <span className="font-mono font-extrabold text-sm text-rose-700">Rs {bal.toFixed(2)}</span>
+            )}
           </div>
         </div>
       </div>

@@ -114,6 +114,7 @@ export function RepairsPage() {
   const [estimate, setEstimate] = useState<number>(0);
   const [editAdvance, setEditAdvance] = useState<number>(0);
   const [editTechId, setEditTechId] = useState('');
+  const [editWarrantyPeriodId, setEditWarrantyPeriodId] = useState('');
   const [parts, setParts] = useState<{ productId?: string; name: string; cost: number; quantity?: number }[]>([]);
   const [selectedProductId, setSelectedProductId] = useState('');
   const [newPartName, setNewPartName] = useState('');
@@ -245,6 +246,7 @@ export function RepairsPage() {
       setEstimate(selectedTicket.estimate ? Number(selectedTicket.estimate) : 0);
       setEditAdvance(selectedTicket.advancePayment ? Number(selectedTicket.advancePayment) : 0);
       setEditTechId(selectedTicket.technicianId || settings?.defaultTechnicianId || '');
+      setEditWarrantyPeriodId(selectedTicket.warrantyPeriodId || '');
       try {
         const parsedParts = selectedTicket.partsJson
           ? typeof selectedTicket.partsJson === 'string'
@@ -338,6 +340,7 @@ export function RepairsPage() {
           estimate,
           advancePayment: editAdvance,
           technicianId: editTechId || undefined,
+          warrantyPeriodId: editWarrantyPeriodId || undefined,
           partsJson: parts,
         },
       })
@@ -422,6 +425,7 @@ export function RepairsPage() {
     setTimeout(() => window.print(), 0);
   }
 
+  const isDelivered = selectedTicket?.status === 'DELIVERED';
   const remainingBalance = Math.max(0, estimate - editAdvance);
 
   return (
@@ -753,6 +757,17 @@ export function RepairsPage() {
         <div className="flex flex-col min-h-0 bg-surface p-5 overflow-y-auto">
           {selectedTicket ? (
             <div className="space-y-4">
+              {/* DELIVERED Locked Banner */}
+              {isDelivered ? (
+                <div className="flex items-center gap-2 rounded-xl border-2 border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+                  <FiCheckCircle className="h-5 w-5 text-emerald-500 shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold text-emerald-600">DELIVERED — Ticket Completed & Locked</p>
+                    <p className="text-[10px] text-emerald-600/70">Payment was completed upon delivery. This ticket is now read-only. You can still print the invoice below.</p>
+                  </div>
+                </div>
+              ) : null}
+
               {/* Detail Header */}
               <div className="flex items-start justify-between border-b border-border pb-3">
                 <div>
@@ -784,8 +799,8 @@ export function RepairsPage() {
                 <select
                   value={selectedTicket.status}
                   onChange={(e) => handleUpdateStatus(e.target.value)}
-                  disabled={selectedTicket.status === 'DELIVERED'}
-                  className="w-full rounded-lg border border-border bg-canvas px-3 py-1.5 text-xs text-ink focus:border-primary focus:outline-none cursor-pointer font-medium"
+                  disabled={isDelivered}
+                  className={`w-full rounded-lg border border-border bg-canvas px-3 py-1.5 text-xs text-ink focus:border-primary focus:outline-none font-medium ${isDelivered ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
                 >
                   {REPAIR_STATUSES.map((status) => (
                     <option key={status} value={status}>
@@ -827,7 +842,8 @@ export function RepairsPage() {
                     <select
                       value={editTechId}
                       onChange={(e) => setEditTechId(e.target.value)}
-                      className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-ink"
+                      disabled={isDelivered}
+                      className={`w-full rounded border border-border bg-surface px-2 py-1 text-xs text-ink ${isDelivered ? 'opacity-60 cursor-not-allowed' : ''}`}
                     >
                       <option value="">Default Technician</option>
                       {technicians.map((t) => (
@@ -846,7 +862,8 @@ export function RepairsPage() {
                       placeholder="0.00"
                       value={editAdvance === 0 ? '' : editAdvance}
                       onChange={(e) => setEditAdvance(e.target.value === '' ? 0 : Number(e.target.value))}
-                      className="py-1 text-xs font-mono"
+                      disabled={isDelivered}
+                      className={`py-1 text-xs font-mono ${isDelivered ? 'opacity-60 cursor-not-allowed' : ''}`}
                     />
                   </div>
                 </div>
@@ -859,7 +876,8 @@ export function RepairsPage() {
                     placeholder="0.00"
                     value={estimate === 0 ? '' : estimate}
                     onChange={(e) => setEstimate(e.target.value === '' ? 0 : Number(e.target.value))}
-                    className="w-full font-mono text-sm py-1 font-bold"
+                    disabled={isDelivered}
+                    className={`w-full font-mono text-sm py-1 font-bold ${isDelivered ? 'opacity-60 cursor-not-allowed' : ''}`}
                   />
                 </div>
 
@@ -870,6 +888,32 @@ export function RepairsPage() {
                     Rs {remainingBalance.toFixed(2)}
                   </span>
                 </div>
+              </div>
+
+              {/* Warranty Period Selector (editable) */}
+              <div className="rounded-xl border border-border bg-canvas p-3 space-y-2">
+                <label className="text-[10px] font-bold uppercase text-muted tracking-wider block">Repair Warranty Period</label>
+                <select
+                  value={editWarrantyPeriodId}
+                  onChange={(e) => setEditWarrantyPeriodId(e.target.value)}
+                  disabled={isDelivered}
+                  className={`w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-ink focus:border-primary focus:outline-none font-medium ${isDelivered ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  <option value="">No Warranty</option>
+                  {warranties.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.label} ({w.durationDays} days)
+                    </option>
+                  ))}
+                </select>
+                {selectedTicket.warrantyExpiresAt ? (
+                  <p className="text-[10px] text-emerald-600 font-medium">
+                    Warranty expires: {new Date(selectedTicket.warrantyExpiresAt).toLocaleDateString()}
+                  </p>
+                ) : null}
+                {selectedTicket.isThreeDayWarranty ? (
+                  <p className="text-[10px] text-amber-500 font-bold">3-Day Warranty Claim (No Charge Repair)</p>
+                ) : null}
               </div>
 
               {/* Spare Parts Linking & Inventory Stock Deduction (Q21) */}
@@ -969,11 +1013,11 @@ export function RepairsPage() {
                 <Button
                   type="button"
                   onClick={handleSaveEstimateAndParts}
-                  disabled={selectedTicket.status === 'DELIVERED'}
+                  disabled={isDelivered}
                   loading={saving}
-                  className="w-full py-1.5 text-xs font-bold mt-2"
+                  className={`w-full py-1.5 text-xs font-bold mt-2 ${isDelivered ? 'opacity-60 cursor-not-allowed' : ''}`}
                 >
-                  Save Charges &amp; Parts
+                  {isDelivered ? 'Ticket Locked (Delivered)' : 'Save Charges & Parts'}
                 </Button>
               </div>
 
