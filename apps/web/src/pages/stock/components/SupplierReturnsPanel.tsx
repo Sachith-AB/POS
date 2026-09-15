@@ -29,7 +29,7 @@ export function SupplierReturnsPanel() {
   const [supplierId, setSupplierId] = useState('');
   const [productId, setProductId] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const [reason, setReason] = useState<'DEFECTIVE' | 'DAMAGED' | 'WRONG_ITEM' | 'OTHER'>('DEFECTIVE');
+  const [reason, setReason] = useState<'DEFECTIVE' | 'DAMAGED' | 'WRONG_ITEM'>('DEFECTIVE');
   const [refundCredit, setRefundCredit] = useState('');
   const [notes, setNotes] = useState('');
   const [savingReturn, setSavingReturn] = useState(false);
@@ -278,7 +278,6 @@ export function SupplierReturnsPanel() {
                       <option value="DEFECTIVE">Defective</option>
                       <option value="DAMAGED">Damaged</option>
                       <option value="WRONG_ITEM">Wrong Item</option>
-                      <option value="OTHER">Other</option>
                     </select>
                   </div>
                 </div>
