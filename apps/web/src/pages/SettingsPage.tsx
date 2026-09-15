@@ -183,6 +183,9 @@ export function SettingsPage() {
       defaultTechnicianId: settings.defaultTechnicianId || '',
       uncollectedRepairDays: Number(settings.uncollectedRepairDays || 30),
       firstDaysWarrantyDays: Number(settings.firstDaysWarrantyDays || 3),
+      loyaltyEnabled: settings.loyaltyEnabled ?? true,
+      loyaltyPointsPer100: Number(settings.loyaltyPointsPer100 || 1),
+      repairIssueTemplates: settings.repairIssueTemplates || [],
       textlkApiToken: settings.textlkApiToken || '',
       textlkSenderId: settings.textlkSenderId || '',
     });
@@ -716,6 +719,28 @@ export function SettingsPage() {
                   value={draftSettings.firstDaysWarrantyDays ?? 3}
                   onChange={(e) => setDraftSettings({ ...draftSettings, firstDaysWarrantyDays: parseInt(e.target.value) })}
                   className="w-full text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-canvas p-4 space-y-3">
+              <h4 className="text-xs font-bold uppercase text-ink tracking-wider">Customer Loyalty</h4>
+              <label className="flex items-center gap-2 text-xs text-ink">
+                <input
+                  type="checkbox"
+                  checked={draftSettings.loyaltyEnabled ?? true}
+                  onChange={(e) => setDraftSettings({ ...draftSettings, loyaltyEnabled: e.target.checked })}
+                />
+                Enable loyalty points
+              </label>
+              <div>
+                <label className="text-[10px] text-muted block mb-0.5">Points earned per Rs 100</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={draftSettings.loyaltyPointsPer100 ?? 1}
+                  onChange={(e) => setDraftSettings({ ...draftSettings, loyaltyPointsPer100: Number(e.target.value) })}
+                  className="w-full text-xs font-mono"
                 />
               </div>
             </div>

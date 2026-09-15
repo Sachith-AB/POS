@@ -4,6 +4,7 @@ export interface Product {
   id: string;
   sku: string;
   barcode: string | null;
+  brand?: string | null;
   name: string;
   costPrice: string | number;
   sellPrice: string | number;

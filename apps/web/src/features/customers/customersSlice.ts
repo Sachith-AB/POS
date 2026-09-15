@@ -20,6 +20,8 @@ export interface CustomerListItem {
   notes: string | null;
   isBlocked: boolean;
   isSuspended: boolean;
+  loyaltyPoints: number;
+  totalPointsEarned: number;
   createdAt: string;
   updatedAt: string;
   categories: CustomerCategory[];

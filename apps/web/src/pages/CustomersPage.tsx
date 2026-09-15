@@ -430,6 +430,7 @@ export function CustomersPage() {
                     <th className="p-3">Categories</th>
                     <th className="p-3 text-right">Purchases</th>
                     <th className="p-3 text-right">Total Spent</th>
+                    <th className="p-3 text-right">Loyalty Points</th>
                     <th className="p-3 text-right">Outstanding</th>
                     <th className="p-3">Status</th>
                     <th className="p-3 text-right">Action</th>
@@ -482,6 +483,10 @@ export function CustomersPage() {
 
                         <td className="p-3 text-right font-bold text-emerald-600">
                           Rs. {customer.totalPurchaseValue.toLocaleString('en-US')}
+                        </td>
+
+                        <td className="p-3 text-right font-bold text-amber-600">
+                          {customer.loyaltyPoints.toLocaleString('en-US')}
                         </td>
 
                         <td className="p-3 text-right font-bold">
@@ -616,7 +621,7 @@ export function CustomersPage() {
             </div>
 
             {/* Profile Statistics Header */}
-            <div className="grid grid-cols-4 gap-2 p-3 bg-surface border-b border-border text-center">
+            <div className="grid grid-cols-5 gap-2 p-3 bg-surface border-b border-border text-center">
               <div className="p-2 rounded-lg bg-canvas border border-border">
                 <div className="text-[10px] text-muted font-medium">Purchases</div>
                 <div className="text-sm font-bold text-ink">{selectedCustomer.stats.totalPurchases}</div>
@@ -637,6 +642,12 @@ export function CustomersPage() {
                 <div className="text-[10px] text-muted font-medium">Outstanding</div>
                 <div className="text-xs font-bold text-red-600">
                   Rs. {selectedCustomer.stats.outstandingAmount.toLocaleString()}
+                </div>
+              </div>
+              <div className="p-2 rounded-lg bg-canvas border border-border">
+                <div className="text-[10px] text-muted font-medium">Loyalty Points</div>
+                <div className="text-xs font-bold text-amber-600">
+                  {selectedCustomer.loyaltyPoints.toLocaleString()}
                 </div>
               </div>
             </div>

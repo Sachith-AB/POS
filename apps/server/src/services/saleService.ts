@@ -308,6 +308,9 @@ export async function completeSale(saleId: string, employeeId: string, paymentAm
 
   const settings = await getSettings();
   const discountPercent = (Number(sale.discount) / Math.max(1, Number(sale.subtotal))) * 100;
+  const loyaltyPoints = sale.customerId && settings.loyaltyEnabled
+    ? Math.floor((Number(sale.total) / 100) * Number(settings.loyaltyPointsPer100 || 0))
+    : 0;
 
   const completed = await prisma.$transaction(async (tx) => {
     for (const item of sale.items) {
@@ -316,6 +319,23 @@ export async function completeSale(saleId: string, employeeId: string, paymentAm
     await tx.payment.create({
       data: { saleId, amount: paymentAmount, method: method as never },
     });
+    if (sale.customerId && loyaltyPoints > 0) {
+      await tx.customer.update({
+        where: { id: sale.customerId },
+        data: {
+          loyaltyPoints: { increment: loyaltyPoints },
+          totalPointsEarned: { increment: loyaltyPoints },
+        },
+      });
+      await tx.loyaltyTransaction.create({
+        data: {
+          customerId: sale.customerId,
+          saleId,
+          points: loyaltyPoints,
+          description: `Points earned from sale ${saleId}`,
+        },
+      });
+    }
     return tx.sale.update({
       where: { id: saleId },
       data: { status: 'COMPLETED' },
@@ -376,6 +396,25 @@ export async function voidSale(saleId: string, employeeId: string) {
         where: { saleId },
         data: { status: 'PENDING', saleId: null },
       });
+      if (sale.customerId) {
+        const earned = await tx.loyaltyTransaction.findFirst({
+          where: { saleId, points: { gt: 0 } },
+        });
+        if (earned) {
+          await tx.customer.update({
+            where: { id: sale.customerId },
+            data: { loyaltyPoints: { decrement: earned.points } },
+          });
+          await tx.loyaltyTransaction.create({
+            data: {
+              customerId: sale.customerId,
+              saleId,
+              points: -earned.points,
+              description: `Points reversed for voided sale ${saleId}`,
+            },
+          });
+        }
+      }
     }
     return tx.sale.update({ where: { id: saleId }, data: { status: 'VOID' } });
   });

@@ -51,6 +51,20 @@ export const shopSettingsSchema = z.object({
   defaultTechnicianId: z.string().nullable().optional(),
   uncollectedRepairDays: z.number().int().min(1).default(30),
   firstDaysWarrantyDays: z.number().int().min(0).default(3),
+  loyaltyEnabled: z.boolean().default(true),
+  loyaltyPointsPer100: z.number().int().nonnegative().default(1),
+  repairIssueTemplates: z.array(z.string().min(1).max(120)).default([
+    'Display Damage',
+    'Battery Issue',
+    'Charging Problem',
+    'Speaker Problem',
+    'Mic Problem',
+    'Camera Problem',
+    'Software Issue',
+    'Water Damage',
+    'Power Issue',
+    'Network Problem',
+  ]),
   // text.lk SMS API configuration
   textlkApiToken: z.string().nullable().optional(),
   textlkSenderId: z.string().nullable().optional(),
@@ -79,6 +93,7 @@ export type PinLoginInput = z.infer<typeof pinLoginSchema>;
 export const productCreateSchema = z.object({
   sku: z.string().min(1).max(60),
   barcode: z.string().min(1).max(60).nullable().optional(),
+  brand: z.string().max(80).nullable().optional(),
   name: z.string().min(1).max(160),
   costPrice: z.number().nonnegative(),
   sellPrice: z.number().nonnegative(), // Retail Price

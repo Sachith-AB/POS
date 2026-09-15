@@ -65,6 +65,10 @@ body,
   .repair-slip * {
     visibility: visible;
   }
+  .a5-repair-bill-container,
+  .a5-repair-bill-container * {
+    visibility: visible;
+  }
   .receipt,
   .repair-slip {
     display: block;

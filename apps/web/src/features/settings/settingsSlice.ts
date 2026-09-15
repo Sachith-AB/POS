@@ -25,6 +25,9 @@ export interface ShopSettings {
   defaultTechnicianId?: string | null;
   uncollectedRepairDays?: number;
   firstDaysWarrantyDays?: number;
+  loyaltyEnabled?: boolean;
+  loyaltyPointsPer100?: number;
+  repairIssueTemplates?: string[];
   textlkApiToken?: string | null;
   textlkSenderId?: string | null;
 }

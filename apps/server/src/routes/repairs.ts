@@ -14,6 +14,8 @@ import {
   checkRecentCustomerSale,
   listUncollectedRepairTickets,
   sendUncollectedSmsReminders,
+  getRepairPartSuggestions,
+  listRepairIssueTemplates,
 } from '../services/repairService.js';
 import { prisma } from '../lib/prisma.js';
 
@@ -62,6 +64,24 @@ router.get(
   asyncHandler(async (_req, res) => {
     const result = await listUncollectedRepairTickets();
     res.json(result);
+  })
+);
+
+router.get(
+  '/part-suggestions',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const deviceInfo = typeof req.query.deviceInfo === 'string' ? req.query.deviceInfo : '';
+    const issue = typeof req.query.issue === 'string' ? req.query.issue : '';
+    res.json(await getRepairPartSuggestions(deviceInfo, issue));
+  })
+);
+
+router.get(
+  '/issue-templates',
+  requireAuth,
+  asyncHandler(async (_req, res) => {
+    res.json(await listRepairIssueTemplates());
   })
 );
 
