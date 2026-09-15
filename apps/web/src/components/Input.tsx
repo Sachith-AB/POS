@@ -40,7 +40,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           input.value = '';
         }
       } else {
-        input.select();
+        try {
+          input.select();
+        } catch (e) {
+          // Browser (e.g., Safari) threw a DOMException because type="number" doesn't support selection.
+          // Safely ignore to prevent React crash.
+        }
       }
     }
   };
