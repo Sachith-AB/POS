@@ -8,6 +8,7 @@ import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { UndoToast } from '../../components/UndoToast';
 import { Receipt } from '../../components/Receipt';
 import { Input } from '../../components/Input';
+import { Button } from '../../components/Button';
 import type { Product } from '../../features/products/productsSlice';
 import { quickButtonsRequested } from '../../features/products/productsSlice';
 import {
@@ -16,6 +17,7 @@ import {
   billResumed,
   billSaleIdAssigned,
   customerMatched,
+  invoiceCustomerDetailsChanged,
   customerPhoneChanged,
   cartAutosaveRequested,
   discountChanged,
@@ -96,6 +98,10 @@ export function PosPage() {
   const [tradeIns, setTradeIns] = useState<TradeInItem[]>([]);
   const [showTradeInModal, setShowTradeInModal] = useState(false);
   const [showCustomerRegisterModal, setShowCustomerRegisterModal] = useState(false);
+  const [showInvoiceReview, setShowInvoiceReview] = useState(false);
+  const [invoiceName, setInvoiceName] = useState('');
+  const [invoiceAddress, setInvoiceAddress] = useState('');
+  const [invoiceNic, setInvoiceNic] = useState('');
 
   const searchRef = useRef<HTMLInputElement>(null);
   const amountRef = useRef<HTMLInputElement>(null);
@@ -458,12 +464,33 @@ export function PosPage() {
     setPosError('');
     const changeVal = Math.max(0, Math.round((tenderedVal - total) * 100) / 100);
     const paymentAmount = total;
+    if (hasMobileInBill) {
+      setInvoiceName(bill.customerName || '');
+      setInvoiceAddress(bill.customerDetails?.address || '');
+      setInvoiceNic(bill.customerDetails?.nic || '');
+      setShowInvoiceReview(true);
+      return;
+    }
     dispatch(
       saleCompleteRequested({
         amount: paymentAmount,
         method,
         tenderedAmount: tenderedVal,
         changeAmount: changeVal,
+      })
+    );
+  }
+
+  function confirmInvoiceReview() {
+    dispatch(invoiceCustomerDetailsChanged({ name: invoiceName, address: invoiceAddress, nic: invoiceNic }));
+    setShowInvoiceReview(false);
+    const tenderedVal = Number(amount);
+    dispatch(
+      saleCompleteRequested({
+        amount: total,
+        method,
+        tenderedAmount: tenderedVal,
+        changeAmount: Math.max(0, Math.round((tenderedVal - total) * 100) / 100),
       })
     );
   }
@@ -783,6 +810,62 @@ export function PosPage() {
           startingInstallment={startingInstallment}
         />
       </div>
+
+      {/* Mobile Invoice Review */}
+      {showInvoiceReview ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-border bg-surface p-5 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-ink">Mobile Phone Invoice</h2>
+                <p className="text-xs text-muted">Review and edit invoice details before finalizing this sale.</p>
+              </div>
+              <span className="rounded bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary">
+                DRAFT
+              </span>
+            </div>
+
+            <div className="mb-4 rounded-lg border border-border bg-canvas p-3 text-xs">
+              {bill.items.map((item) => (
+                <div key={item.productId + (item.serializedItemId || '')} className="flex justify-between gap-3 py-1">
+                  <span className="font-semibold text-ink">
+                    {item.name} {item.imei ? `(IMEI: ${item.imei})` : ''} x{item.quantity}
+                  </span>
+                  <span className="font-mono text-ink">Rs {(item.quantity * item.unitPrice).toFixed(2)}</span>
+                </div>
+              ))}
+              <div className="mt-2 flex justify-between border-t border-border pt-2 font-bold text-ink">
+                <span>Total</span>
+                <span>Rs {total.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold text-muted">Customer Name</label>
+                <Input value={invoiceName} onChange={(e) => setInvoiceName(e.target.value)} className="w-full text-xs" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold text-muted">NIC</label>
+                <Input value={invoiceNic} onChange={(e) => setInvoiceNic(e.target.value)} className="w-full text-xs" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <label className="mb-1 block text-[10px] font-semibold text-muted">Address</label>
+              <Input value={invoiceAddress} onChange={(e) => setInvoiceAddress(e.target.value)} className="w-full text-xs" />
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setShowInvoiceReview(false)} className="text-xs">
+                Back to Edit
+              </Button>
+              <Button type="button" onClick={confirmInvoiceReview} loading={completing} className="text-xs font-bold">
+                Confirm &amp; Generate Invoice
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Customer Registration Modal */}
       <PosCustomerRegisterModal

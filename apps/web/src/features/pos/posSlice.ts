@@ -227,6 +227,18 @@ const posSlice = createSlice({
       state.customerSearching = false;
       state.customerSearched = true;
     },
+    invoiceCustomerDetailsChanged(
+      state,
+      action: PayloadAction<{ name: string; address: string; nic: string }>
+    ) {
+      const bill = state.bills[state.activeIndex];
+      bill.customerName = action.payload.name.trim() || null;
+      if (bill.customerDetails) {
+        bill.customerDetails.name = bill.customerName;
+        bill.customerDetails.address = action.payload.address.trim() || null;
+        bill.customerDetails.nic = action.payload.nic.trim() || null;
+      }
+    },
     activeBillSwitched(state, action: PayloadAction<number>) {
       state.activeIndex = action.payload;
       state.customerSearching = false;
@@ -329,6 +341,7 @@ export const {
   customerLookupReset,
   customerPhoneChanged,
   customerMatched,
+  invoiceCustomerDetailsChanged,
   activeBillSwitched,
   billSaleIdAssigned,
   billCleared,
