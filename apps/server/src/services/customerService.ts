@@ -274,6 +274,8 @@ export async function listCustomers(query: CustomerListQueryInput) {
       notes: c.notes,
       isBlocked: c.isBlocked,
       isSuspended: c.isSuspended,
+      loyaltyPoints: c.loyaltyPoints,
+      totalPointsEarned: c.totalPointsEarned,
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
       categories: c.categories.map((ca) => ca.category),

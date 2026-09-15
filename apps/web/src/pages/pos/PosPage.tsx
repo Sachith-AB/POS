@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Fuse from 'fuse.js';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
@@ -72,6 +73,8 @@ export function PosPage() {
   const printedRef = useRef<string | null>(null);
 
   const [term, setTerm] = useState('');
+  const [productCatalog, setProductCatalog] = useState<Product[]>([]);
+  const [fuzzyResults, setFuzzyResults] = useState<Product[]>([]);
   const [notFound, setNotFound] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<'CASH' | 'CARD' | 'BANK_TRANSFER'>('CASH');
@@ -153,7 +156,30 @@ export function PosPage() {
     api.get<TradeInItem[]>('/trade-ins?status=PENDING')
       .then((data) => setTradeIns(data || []))
       .catch(() => {});
+    api.get<Product[]>('/products?category=')
+      .then((data) => setProductCatalog(data || []))
+      .catch(() => setProductCatalog([]));
   }, [dispatch]);
+
+  useEffect(() => {
+    const query = term.trim();
+    if (!query || query.length < 2) {
+      setFuzzyResults([]);
+      return;
+    }
+    const fuse = new Fuse(productCatalog, {
+      keys: [
+        { name: 'name', weight: 0.5 },
+        { name: 'sku', weight: 0.2 },
+        { name: 'barcode', weight: 0.15 },
+        { name: 'category', weight: 0.15 },
+        { name: 'brand', weight: 0.1 },
+      ],
+      threshold: 0.45,
+      ignoreLocation: true,
+    });
+    setFuzzyResults(fuse.search(query, { limit: 8 }).map((result) => result.item));
+  }, [term, productCatalog]);
 
   const fetchMobilePhones = useCallback(async (query?: string) => {
     setMobileLoading(true);
@@ -354,26 +380,32 @@ export function PosPage() {
       if (!(err instanceof ApiError) || err.status !== 404) throw err;
     }
 
-    const results = await api.get<Product[]>(`/products?search=${encodeURIComponent(query)}`);
+    const results = fuzzyResults;
     if (results.length > 0) {
-      if (results[0].isSerialized) {
-        const mobiles = await api.get<MobilePhoneProduct[]>(`/products/mobiles?search=${encodeURIComponent(results[0].name)}`);
-        const target = mobiles.find((m) => m.id === results[0].id) || (results[0] as MobilePhoneProduct);
-        if (target.serializedItems && target.serializedItems.length > 0) {
-          setSelectedMobileForImei(target);
-          setTerm('');
-          return;
-        } else {
-          toast.error(`No in-stock IMEIs found for ${results[0].name}`);
-          setTerm('');
-          return;
-        }
+      if (results.length > 1) {
+        toast.info('Multiple Products Found. Select a product from the list.');
+        return;
       }
-      addProduct(results[0]);
-      setTerm('');
+      await selectProductResult(results[0]);
     } else {
       setNotFound(`No product found for "${query}"`);
     }
+  }
+
+  async function selectProductResult(product: Product) {
+    if (product.isSerialized) {
+      const mobiles = await api.get<MobilePhoneProduct[]>(`/products/mobiles?search=${encodeURIComponent(product.name)}`);
+      const target = mobiles.find((mobile) => mobile.id === product.id) || (product as MobilePhoneProduct);
+      if (target.serializedItems && target.serializedItems.length > 0) {
+        setSelectedMobileForImei(target);
+      } else {
+        toast.error(`No in-stock IMEIs found for ${product.name}`);
+      }
+    } else {
+      addProduct(product);
+    }
+    setTerm('');
+    setFuzzyResults([]);
   }
 
   function handleMethodChange(m: 'CASH' | 'CARD' | 'BANK_TRANSFER') {
@@ -638,7 +670,7 @@ export function PosPage() {
               onCloseMobileTab={() => setSearchParams({})}
             />
           ) : (
-            <>
+            <div className="relative min-w-0">
               <Input
                 ref={searchRef}
                 placeholder="Scan barcode, scan IMEI, or search item… (F1)"
@@ -650,8 +682,27 @@ export function PosPage() {
                 autoComplete="off"
                 className="w-full text-base py-2.5"
               />
+              {term.trim().length >= 2 && fuzzyResults.length > 0 ? (
+                <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-surface shadow-lg">
+                  <p className="border-b border-border px-3 py-1.5 text-xs font-bold text-ink">Multiple Products Found</p>
+                  {fuzzyResults.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => selectProductResult(product)}
+                      className="flex w-full items-center justify-between border-b border-border px-3 py-2 text-left text-xs text-ink hover:bg-canvas cursor-pointer"
+                    >
+                      <span>
+                        <span className="block font-semibold">{product.name}</span>
+                        <span className="text-[10px] text-muted">{product.sku} · {product.category}</span>
+                      </span>
+                      <span className="font-mono">Rs {Number(product.sellPrice).toFixed(2)}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {notFound ? <p className="text-amber-500 text-sm font-medium">{notFound}</p> : null}
-            </>
+            </div>
           )}
 
           {/* Cart Table */}

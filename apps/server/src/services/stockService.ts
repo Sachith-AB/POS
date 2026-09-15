@@ -45,14 +45,18 @@ export async function receiveStockBatch(input: StockReceiveBatchInput, employeeI
       const product = await tx.product.findUnique({ where: { id: line.productId } });
       if (!product) throw new HttpError(404, `Product ${line.productId} not found`);
 
+      const quantityDelta = product.isSerialized && line.imeis?.length
+        ? line.imeis.length
+        : line.quantityDelta;
+
       const unitCost =
         line.costPriceAtTime !== undefined ? Number(line.costPriceAtTime) : Number(product.costPrice) || 0;
-      totalBatchCost += unitCost * line.quantityDelta;
-      totalUnits += line.quantityDelta;
+      totalBatchCost += unitCost * quantityDelta;
+      totalUnits += quantityDelta;
 
       const updated = await tx.product.update({
         where: { id: line.productId },
-        data: { quantity: { increment: line.quantityDelta } },
+        data: { quantity: { increment: quantityDelta } },
       });
 
       await tx.stockMovement.create({
@@ -60,7 +64,7 @@ export async function receiveStockBatch(input: StockReceiveBatchInput, employeeI
           productId: line.productId,
           supplierId: input.supplierId || null,
           type: 'RECEIVE',
-          quantityDelta: line.quantityDelta,
+          quantityDelta,
           costPriceAtTime: line.costPriceAtTime !== undefined ? line.costPriceAtTime : Number(product.costPrice),
           supplierName: input.supplierName || null,
           invoiceRef: batchReference,

@@ -4,16 +4,27 @@ import { HttpError } from '../middleware/errorHandler.js';
 
 export async function listProducts(params: { search?: string; category?: string } = {}) {
   const { search, category } = params;
+  const categoryFilter = category
+    ? {
+        OR: [
+          { category: { contains: category, mode: 'insensitive' as const } },
+          { categoryRel: { name: { contains: category, mode: 'insensitive' as const } } },
+        ],
+      }
+    : {};
+  const searchFilter = search
+    ? {
+        OR: [
+          { name: { contains: search, mode: 'insensitive' as const } },
+          { sku: { contains: search, mode: 'insensitive' as const } },
+          { barcode: { contains: search, mode: 'insensitive' as const } },
+        ],
+      }
+    : {};
+
   return prisma.product.findMany({
     where: {
-      category: category || undefined,
-      OR: search
-        ? [
-            { name: { contains: search, mode: 'insensitive' } },
-            { sku: { contains: search, mode: 'insensitive' } },
-            { barcode: { contains: search, mode: 'insensitive' } },
-          ]
-        : undefined,
+      AND: [categoryFilter, searchFilter],
     },
     include: { warrantyPeriod: true, categoryRel: true },
     orderBy: { name: 'asc' },

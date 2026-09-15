@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FiTrash2, FiExternalLink, FiTool, FiDollarSign } from 'react-icons/fi';
+import { FiTrash2, FiExternalLink, FiTool, FiDollarSign, FiCheckCircle, FiUser } from 'react-icons/fi';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
 import {
   ticketsRequested,
@@ -18,6 +18,7 @@ import {
 import { PhotoCapture } from '../components/PhotoCapture';
 import { Button } from '../components/Button';
 import { A5RepairBill } from '../components/A5RepairBill';
+import { RepairSlip } from '../components/RepairSlip';
 import { Input } from '../components/Input';
 import { REPAIR_STATUSES } from '@pos/shared';
 import { toast } from 'react-toastify';
@@ -52,6 +53,13 @@ interface InventoryProduct {
   quantity: number;
 }
 
+interface SuggestedPart {
+  productId?: string;
+  name: string;
+  cost: number;
+  usageCount: number;
+}
+
 export function RepairsPage() {
   const dispatch = useAppDispatch();
   const {
@@ -77,15 +85,22 @@ export function RepairsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showPhotoCapture, setShowPhotoCapture] = useState(false);
   const [showOutsourceModal, setShowOutsourceModal] = useState(false);
+  const [printView, setPrintView] = useState<'barcode' | 'invoice' | null>(null);
 
   // Aux state
   const [technicians, setTechnicians] = useState<TechnicianItem[]>([]);
   const [warranties, setWarranties] = useState<WarrantyOption[]>([]);
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
+  const [issueTemplates, setIssueTemplates] = useState<string[]>([]);
+  const [suggestedParts, setSuggestedParts] = useState<SuggestedPart[]>([]);
 
   // Create ticket state
   const [phone, setPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
+  const [customerSearching, setCustomerSearching] = useState(false);
+  const [matchedCustomer, setMatchedCustomer] = useState<{ id: string; name: string | null; phone: string } | null>(null);
+  const [customerSuggestions, setCustomerSuggestions] = useState<Array<{ id: string; name: string | null; phone: string }>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [deviceInfo, setDeviceInfo] = useState('');
   const [issue, setIssue] = useState('');
   const [technicianId, setTechnicianId] = useState('');
@@ -124,8 +139,12 @@ export function RepairsPage() {
       setWarranties(res || []);
     }).catch(() => { });
 
+    api.get<string[]>('/repairs/issue-templates').then((res) => {
+      setIssueTemplates(res || []);
+    }).catch(() => { });
+
     // Load spare products
-    api.get<InventoryProduct[]>('/products').then((res) => {
+    api.get<InventoryProduct[]>('/products?category=Spare%20Parts').then((res) => {
       setInventoryProducts(res || []);
     }).catch(() => { });
   }, [dispatch]);
@@ -146,6 +165,72 @@ export function RepairsPage() {
       setIsThreeDayWarranty(false);
     }
   }, [phone, showCreateModal, dispatch]);
+
+  // Debounced customer lookup and contact suggestions when phone number changes
+  useEffect(() => {
+    if (!showCreateModal) return;
+
+    const trimmed = phone.trim();
+    if (trimmed.length < 3) {
+      setMatchedCustomer(null);
+      setCustomerSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setCustomerSearching(true);
+      try {
+        const lookup = await api.get<{ id: string; name: string | null; phone: string } | null>(
+          `/customers/lookup?phone=${encodeURIComponent(trimmed)}`
+        );
+        if (lookup) {
+          setMatchedCustomer(lookup);
+          if (lookup.name) {
+            setCustomerName(lookup.name);
+          }
+        } else {
+          setMatchedCustomer(null);
+        }
+
+        const searchRes = await api.get<any>(
+          `/customers?search=${encodeURIComponent(trimmed)}&limit=5`
+        );
+        const list = Array.isArray(searchRes) ? searchRes : (searchRes?.items || []);
+        setCustomerSuggestions(list);
+      } catch {
+        setMatchedCustomer(null);
+        setCustomerSuggestions([]);
+      } finally {
+        setCustomerSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [phone, showCreateModal]);
+
+  function handleSelectCustomer(cust: { id: string; name: string | null; phone: string }) {
+    setPhone(cust.phone);
+    setCustomerName(cust.name || '');
+    setMatchedCustomer(cust);
+    setShowSuggestions(false);
+    if (cust.phone.trim().length >= 7) {
+      dispatch(recentSaleCheckRequested(cust.phone.trim()));
+    }
+  }
+
+  function handleCustomerNameChange(val: string) {
+    setCustomerName(val);
+    const trimmed = val.trim();
+    if (trimmed.length >= 2 && !matchedCustomer) {
+      api.get<any>(`/customers?search=${encodeURIComponent(trimmed)}&limit=5`)
+        .then((res) => {
+          const list = Array.isArray(res) ? res : (res?.items || []);
+          setCustomerSuggestions(list);
+          if (list.length > 0) setShowSuggestions(true);
+        })
+        .catch(() => {});
+    }
+  }
 
   // Auto-check 3-day warranty if recent sale found
   useEffect(() => {
@@ -175,6 +260,10 @@ export function RepairsPage() {
       api.get<any[]>(`/outsourced-repairs?repairTicketId=${selectedTicket.id}`)
         .then((data) => setOutsourcedList(data || []))
         .catch(() => setOutsourcedList([]));
+
+      api.get<SuggestedPart[]>(
+        `/repairs/part-suggestions?deviceInfo=${encodeURIComponent(selectedTicket.deviceInfo)}&issue=${encodeURIComponent(selectedTicket.issue)}`
+      ).then((data) => setSuggestedParts(data || [])).catch(() => setSuggestedParts([]));
     }
   }, [selectedTicket, settings]);
 
@@ -213,8 +302,15 @@ export function RepairsPage() {
     );
 
     // Reset form and close
+    handleCloseCreateModal();
+  }
+
+  function handleCloseCreateModal() {
     setPhone('');
     setCustomerName('');
+    setMatchedCustomer(null);
+    setCustomerSuggestions([]);
+    setShowSuggestions(false);
     setDeviceInfo('');
     setIssue('');
     setAdvancePayment('');
@@ -224,7 +320,7 @@ export function RepairsPage() {
   }
 
   function handleUpdateStatus(newStatus: string) {
-    if (!selectedTicket) return;
+    if (!selectedTicket || selectedTicket.status === 'DELIVERED') return;
     dispatch(
       ticketUpdateRequested({
         id: selectedTicket.id,
@@ -234,7 +330,7 @@ export function RepairsPage() {
   }
 
   function handleSaveEstimateAndParts() {
-    if (!selectedTicket) return;
+    if (!selectedTicket || selectedTicket.status === 'DELIVERED') return;
     dispatch(
       ticketUpdateRequested({
         id: selectedTicket.id,
@@ -279,6 +375,11 @@ export function RepairsPage() {
     setNewPartCost('');
   }
 
+  function handleAddSuggestedPart(part: SuggestedPart) {
+    if (parts.some((existing) => existing.productId === part.productId && part.productId)) return;
+    setParts([...parts, { productId: part.productId, name: part.name, cost: part.cost, quantity: 1 }]);
+  }
+
   function handleRemovePart(index: number) {
     setParts(parts.filter((_, i) => i !== index));
   }
@@ -316,8 +417,9 @@ export function RepairsPage() {
     }
   }
 
-  function handlePrintSlip() {
-    window.print();
+  function handlePrint(view: 'barcode' | 'invoice') {
+    setPrintView(view);
+    setTimeout(() => window.print(), 0);
   }
 
   const remainingBalance = Math.max(0, estimate - editAdvance);
@@ -682,6 +784,7 @@ export function RepairsPage() {
                 <select
                   value={selectedTicket.status}
                   onChange={(e) => handleUpdateStatus(e.target.value)}
+                  disabled={selectedTicket.status === 'DELIVERED'}
                   className="w-full rounded-lg border border-border bg-canvas px-3 py-1.5 text-xs text-ink focus:border-primary focus:outline-none cursor-pointer font-medium"
                 >
                   {REPAIR_STATUSES.map((status) => (
@@ -777,6 +880,25 @@ export function RepairsPage() {
                   </h3>
                 </div>
 
+                {suggestedParts.length > 0 ? (
+                  <div className="rounded border border-amber-500/20 bg-amber-500/5 p-2">
+                    <p className="text-[10px] font-bold text-amber-600 mb-1">Recommended Parts</p>
+                    <div className="flex flex-wrap gap-1">
+                      {suggestedParts.map((part) => (
+                        <button
+                          key={`${part.productId || part.name}`}
+                          type="button"
+                          onClick={() => handleAddSuggestedPart(part)}
+                          className="rounded border border-amber-500/30 px-1.5 py-0.5 text-[10px] text-amber-700 hover:bg-amber-500/10 cursor-pointer"
+                          title={`Used ${part.usageCount} time${part.usageCount === 1 ? '' : 's'} in similar repairs`}
+                        >
+                          {part.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 {/* Pick from Inventory */}
                 <div className="space-y-1">
                   <label className="text-[10px] text-muted block">Select from Parts Inventory</label>
@@ -847,6 +969,7 @@ export function RepairsPage() {
                 <Button
                   type="button"
                   onClick={handleSaveEstimateAndParts}
+                  disabled={selectedTicket.status === 'DELIVERED'}
                   loading={saving}
                   className="w-full py-1.5 text-xs font-bold mt-2"
                 >
@@ -945,14 +1068,21 @@ export function RepairsPage() {
                 </div>
               </div>
 
-              {/* Action Buttons: A5 Bill Book Print (Q28) */}
+              {/* Print actions */}
               <div className="flex gap-2 border-t border-border pt-3">
                 <Button
                   type="button"
-                  onClick={handlePrintSlip}
+                  onClick={() => handlePrint('barcode')}
                   className="flex-1 py-2 text-xs font-bold"
                 >
-                  Print A5 Bill Book (2 Copies)
+                  Barcode Print
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => handlePrint('invoice')}
+                  className="flex-1 py-2 text-xs font-bold"
+                >
+                  Invoice Print
                 </Button>
                 <Button
                   type="button"
@@ -985,28 +1115,91 @@ export function RepairsPage() {
 
             <form onSubmit={handleCreateTicket} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <div>
+                <div className="relative">
                   <label className="text-[10px] font-semibold text-muted block mb-0.5">
                     Customer Phone <span className="text-rose-500">*</span>
                   </label>
-                  <Input
-                    required
-                    placeholder="07XXXXXXXX"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full text-xs"
-                  />
+                  <div className="relative">
+                    <Input
+                      required
+                      placeholder="07XXXXXXXX"
+                      value={phone}
+                      onChange={(e) => {
+                        setPhone(e.target.value);
+                        setShowSuggestions(true);
+                      }}
+                      onFocus={() => {
+                        if (customerSuggestions.length > 0) setShowSuggestions(true);
+                      }}
+                      className="w-full text-xs font-mono pr-6"
+                    />
+                    {customerSearching ? (
+                      <span className="absolute right-2 top-2.5 flex items-center">
+                        <span className="inline-block h-2 w-2 rounded-full bg-primary animate-ping" />
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {/* Matching Contacts Dropdown */}
+                  {showSuggestions && customerSuggestions.length > 0 ? (
+                    <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded-xl border border-border bg-surface p-1 shadow-xl">
+                      <div className="flex items-center justify-between border-b border-border px-2 py-1 text-[10px] font-semibold text-muted uppercase tracking-wider">
+                        <span>Matching Contacts</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowSuggestions(false)}
+                          className="hover:text-ink cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto">
+                        {customerSuggestions.map((cust) => (
+                          <div
+                            key={cust.id}
+                            onClick={() => handleSelectCustomer(cust)}
+                            className="flex cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 text-xs hover:bg-canvas transition-colors"
+                          >
+                            <div className="truncate">
+                              <div className="font-semibold text-ink truncate">{cust.name || 'Unnamed Contact'}</div>
+                              <div className="font-mono text-[11px] text-muted">{cust.phone}</div>
+                            </div>
+                            <span className="text-[10px] text-primary shrink-0 ml-2 font-medium">Select</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
-                <div>
+
+                <div className="relative">
                   <label className="text-[10px] font-semibold text-muted block mb-0.5">Customer Name</label>
                   <Input
                     placeholder="e.g. John Doe"
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
+                    onChange={(e) => handleCustomerNameChange(e.target.value)}
                     className="w-full text-xs"
                   />
                 </div>
               </div>
+
+              {/* Matched Contact Info / New Contact Indicator */}
+              {matchedCustomer ? (
+                <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                  <span className="flex items-center gap-1.5 font-medium truncate">
+                    <FiCheckCircle className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">Contact Loaded: <strong>{matchedCustomer.name || 'Unnamed Contact'}</strong></span>
+                  </span>
+                  <span className="text-[10px] font-mono shrink-0 ml-2 bg-emerald-500/20 px-1.5 py-0.5 rounded font-bold">
+                    Existing Customer
+                  </span>
+                </div>
+              ) : phone.trim().length >= 7 && !customerSearching ? (
+                <div className="flex items-center gap-1.5 rounded-lg border border-border bg-canvas px-2.5 py-1 text-[11px] text-muted">
+                  <FiUser className="h-3 w-3 shrink-0" />
+                  <span>New Customer &bull; will be registered upon ticket intake</span>
+                </div>
+              ) : null}
 
               {/* Q4 3-Day Warranty Recent Purchase Alert Banner */}
               {recentSaleCheck.loading ? (
@@ -1042,6 +1235,20 @@ export function RepairsPage() {
                 <label className="text-[10px] font-semibold text-muted block mb-0.5">
                   Reported Problem Description <span className="text-rose-500">*</span>
                 </label>
+                {issueTemplates.length > 0 ? (
+                  <div className="flex flex-wrap gap-1 mb-1.5">
+                    {issueTemplates.slice(0, 10).map((template) => (
+                      <button
+                        key={template}
+                        type="button"
+                        onClick={() => setIssue(template)}
+                        className="rounded border border-border bg-canvas px-1.5 py-0.5 text-[10px] text-muted hover:text-ink hover:border-primary cursor-pointer"
+                      >
+                        {template}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 <textarea
                   required
                   rows={2}
@@ -1086,11 +1293,16 @@ export function RepairsPage() {
                 <div>
                   <label className="text-[10px] font-semibold text-muted block mb-0.5">Repair Warranty</label>
                   <select
-                    value={warrantyPeriodId}
-                    onChange={(e) => setWarrantyPeriodId(e.target.value)}
+                    value={isThreeDayWarranty ? '__THREE_DAY__' : warrantyPeriodId}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setWarrantyPeriodId(value === '__THREE_DAY__' ? '' : value);
+                      setIsThreeDayWarranty(value === '__THREE_DAY__');
+                    }}
                     className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink"
                   >
-                    <option value="">Default (First 3 Days Warranty Support)</option>
+                      <option value="">No Warranty</option>
+                      <option value="__THREE_DAY__">3-Day Warranty</option>
                     {warranties.map((w) => (
                       <option key={w.id} value={w.id}>
                         {w.label} ({w.durationDays} days)
@@ -1139,7 +1351,7 @@ export function RepairsPage() {
               <div className="flex justify-end gap-2 border-t border-border pt-3">
                 <Button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={handleCloseCreateModal}
                   variant="secondary"
                   className="px-4 py-2 text-xs font-bold"
                 >
@@ -1227,8 +1439,8 @@ export function RepairsPage() {
         </div>
       ) : null}
 
-      {/* A5 2-Copy Bill Book Format Print View (Q28) */}
-      <A5RepairBill ticket={selectedTicket} />
+      {printView === 'barcode' ? <RepairSlip ticket={selectedTicket} /> : null}
+      {printView === 'invoice' ? <A5RepairBill ticket={selectedTicket} /> : null}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { sendSms } from './smsService.js';
 import { recordAudit } from './auditService.js';
 import { getSettings } from './settingsService.js';
+import { findCustomerByPhone } from './customerService.js';
 import type { RepairTicketCreateInput, RepairTicketUpdateInput } from '@pos/shared';
 
 export async function listRepairTickets(filters: {
@@ -56,6 +57,82 @@ export async function listRepairTickets(filters: {
   return { items, total, page, limit, pages: Math.ceil(total / limit) };
 }
 
+function repairSearchTokens(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter((token) => token.length >= 2);
+}
+
+export async function getRepairPartSuggestions(deviceInfo: string, issue: string) {
+  const deviceTokens = repairSearchTokens(deviceInfo);
+  const issueTokens = repairSearchTokens(issue);
+  const tickets = await prisma.repairTicket.findMany({
+    select: { deviceInfo: true, issue: true, partsJson: true },
+    orderBy: { updatedAt: 'desc' },
+    take: 5000,
+  });
+
+  const counts = new Map<string, { count: number; part: any }>();
+  for (const ticket of tickets) {
+    const ticketDeviceTokens = repairSearchTokens(ticket.deviceInfo);
+    const ticketIssueTokens = repairSearchTokens(ticket.issue);
+    const deviceScore = deviceTokens.filter((token) => ticketDeviceTokens.includes(token)).length;
+    const issueScore = issueTokens.filter((token) => ticketIssueTokens.includes(token)).length;
+    if ((deviceTokens.length > 0 && deviceScore === 0) && (issueTokens.length > 0 && issueScore === 0)) continue;
+
+    let parts: any[] = [];
+    try {
+      parts = Array.isArray(ticket.partsJson)
+        ? ticket.partsJson
+        : JSON.parse(String(ticket.partsJson || '[]'));
+    } catch {
+      continue;
+    }
+    for (const part of parts) {
+      if (!part?.name) continue;
+      const key = part.productId || String(part.name).trim().toLowerCase();
+      const current = counts.get(key);
+      counts.set(key, {
+        count: (current?.count || 0) + Number(part.quantity || 1),
+        part: current?.part || {
+          productId: part.productId,
+          name: part.name,
+          cost: Number(part.cost || 0),
+        },
+      });
+    }
+  }
+
+  return Array.from(counts.values())
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 8)
+    .map(({ count, part }) => ({ ...part, usageCount: count }));
+}
+
+export async function listRepairIssueTemplates() {
+  const settings = await getSettings();
+  const defaultTemplates = [
+    'Display Damage', 'Battery Issue', 'Charging Problem', 'Speaker Problem', 'Mic Problem',
+    'Camera Problem', 'Software Issue', 'Water Damage', 'Power Issue', 'Network Problem',
+  ];
+  const configured = Array.isArray(settings.repairIssueTemplates)
+    ? settings.repairIssueTemplates.filter((item): item is string => typeof item === 'string')
+    : [];
+  const tickets = await prisma.repairTicket.findMany({
+    select: { issue: true },
+    orderBy: { createdAt: 'desc' },
+    take: 5000,
+  });
+  const frequencies = new Map<string, { label: string; count: number }>();
+  for (const issue of tickets) {
+    const label = issue.issue.trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    const current = frequencies.get(key);
+    frequencies.set(key, { label: current?.label || label, count: (current?.count || 0) + 1 });
+  }
+  const historical = Array.from(frequencies.values()).sort((a, b) => b.count - a.count).slice(0, 10).map((item) => item.label);
+  return Array.from(new Set([...historical, ...configured, ...defaultTemplates])).slice(0, 20);
+}
+
 export async function getRepairTicket(id: string) {
   const ticket = await prisma.repairTicket.findUnique({
     where: { id },
@@ -74,9 +151,7 @@ export async function checkRecentCustomerSale(phone: string) {
   const settings = await getSettings();
   const firstDaysRule = settings?.firstDaysWarrantyDays ?? 3;
 
-  const customer = await prisma.customer.findUnique({
-    where: { phone },
-  });
+  const customer = await findCustomerByPhone(phone);
 
   if (!customer) {
     return { hasRecentSale: false, firstDaysRule };
@@ -106,19 +181,25 @@ export async function checkRecentCustomerSale(phone: string) {
 
 export async function createRepairTicket(input: RepairTicketCreateInput, employeeId: string) {
   // Upsert customer by phone
-  let customer = await prisma.customer.findUnique({ where: { phone: input.phone } });
+  let customer = await findCustomerByPhone(input.phone);
   if (!customer) {
-    customer = await prisma.customer.create({
+    await prisma.customer.create({
       data: {
         phone: input.phone,
         name: input.customerName || null,
       },
     });
+    customer = await findCustomerByPhone(input.phone);
   } else if (input.customerName && !customer.name) {
-    customer = await prisma.customer.update({
+    await prisma.customer.update({
       where: { id: customer.id },
       data: { name: input.customerName },
     });
+    customer = await findCustomerByPhone(input.phone);
+  }
+
+  if (!customer) {
+    throw new HttpError(500, 'Unable to load repair customer');
   }
 
   // Check 3-day warranty support rule (Q4)
@@ -194,10 +275,17 @@ export async function updateRepairTicket(
 ) {
   const ticket = await getRepairTicket(id);
 
+  if (ticket.status === 'DELIVERED' && input.status !== undefined && input.status !== 'DELIVERED') {
+    throw new HttpError(409, 'Delivered repair tickets are locked');
+  }
+
   const data: any = {};
   if (input.status !== undefined) data.status = input.status;
   if (input.estimate !== undefined) data.estimate = input.estimate;
   if (input.advancePayment !== undefined) data.advancePayment = input.advancePayment;
+  if (input.status === 'DELIVERED') {
+    data.advancePayment = Number(input.estimate ?? ticket.estimate ?? 0);
+  }
   if (input.technicianId !== undefined) data.technicianId = input.technicianId || null;
   if (input.commissionMethod !== undefined) data.commissionMethod = input.commissionMethod;
   if (input.commissionValue !== undefined) data.commissionValue = input.commissionValue;
